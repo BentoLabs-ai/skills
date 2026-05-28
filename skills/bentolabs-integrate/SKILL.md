@@ -101,9 +101,30 @@ To confirm the SDK's background worker is alive, run `scripts/check-worker.py`. 
 
 ### Validation loop
 
-For every real call site instrumented in Step 3, run the user flow once and confirm one row appears with: correct `provider`, correct `model`, non-empty `input` and `output`, `user_id` populated, `convo_id` populated. If any column is empty, return to Step 3 for that call site. Do not move on until every column is filled.
+For every call site instrumented in Step 3:
 
-If `user_id` or `convo_id` is empty on integration-captured spans, the init-time getter returned `None`. See `references/TROUBLESHOOTING.md`.
+1. Run the user flow once that exercises that call site.
+2. Open `https://platform.bentolabs.ai` and find the new row.
+3. Check six columns: `provider`, `model`, `input`, `output`, `user_id`, `convo_id`. All non-empty.
+4. If any column is empty, return to Step 3 for that call site. Fix the wrap and re-run.
+5. Repeat from step 1 until every column is filled.
+
+If `user_id` or `convo_id` is empty on integration-captured spans, the init-time getter returned `None`. Walk `references/TROUBLESHOOTING.md` for the diagnostic checklist. Do not move on to other work until validation passes for every site.
+
+## Gotchas
+
+Concrete corrections the agent will get wrong without being told. Read these before writing instrumentation.
+
+- **`provider` is not auto-inferred from the model name.** Skip it and the provider filter and grouping break. Pass `provider="openai"` / `"anthropic"` / `"aws_bedrock"` / `"google"` etc. explicitly on every `track_ai` call.
+- **A Bedrock model id like `anthropic.claude-3-sonnet-20240229-v1:0` needs `provider="aws_bedrock"`, NOT `"anthropic"`.** The model id is ambiguous on purpose.
+- **`convo_id` must be the same string across every turn of one conversation.** Minting a fresh UUID per request fragments the conversation timeline into N independent rows. The common bug is generating it inside the request handler instead of pulling it from the path param.
+- **`track_ai` uses `convo_id`. Everywhere else uses `session_id`.** `bento.init`, `bento.begin`, `bento.update_current_trace`, `bento.propagate_attributes` all take `session_id=`. Same value, different kwarg name. This is the single biggest naming footgun, especially when migrating from Langfuse.
+- **Call `bento.init()` and `bento.instrument()` ONCE at startup, not per request.** They are idempotent, but a partial `init()` per request churns identity registration.
+- **Threads and `concurrent.futures` workers do NOT inherit the trajectory `ContextVar`.** Wrap submit calls with `contextvars.copy_context().run(...)` to inherit. `asyncio` tasks inherit automatically.
+- **Short scripts, notebooks, Lambdas, and `os._exit` drop the last batch.** Call `bento.flush()` before exit. Long-running services flush via `atexit` on clean exit; hard kills bypass `atexit`.
+- **`bento.instrument()` returning `None` means the `[adk]` extra is not installed in the active venv.** It does NOT raise. Re-run `pip install "bentolabs-sdk[adk]"` in the same venv and confirm with `pip show bentolabs-sdk`.
+- **`properties=` keep their type for primitives and homogeneous lists.** Dicts and mixed lists fall back to JSON strings. Do NOT put `gen_ai.*`, `input.value`, or `output.value` keys inside `properties` — the SDK-managed kwargs overwrite them.
+- **`bento.track_ai` and `bento.begin` detach from any outer OTel context on purpose.** Do not "fix" this by reattaching. The ingest mapper depends on the detachment.
 
 ## Reference
 

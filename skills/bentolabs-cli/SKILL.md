@@ -43,6 +43,17 @@ For copy-paste recipes (5 most recent traces, jq pipe, raw request), read `scrip
 
 If the generated command tree doesn't expose an endpoint cleanly, or you need full control over the request, use `bentolabs raw <METHOD> <PATH>`. Fill in path params (including `workspace_id`) yourself. `raw` reads its body from `--data` or `--data-file` only, not from stdin. See `references/COMMANDS.md` for the full signature.
 
+## Gotchas
+
+Concrete corrections for mistakes that are easy to make. Read these before writing commands.
+
+- **`workspace_id` is never a positional argument on generated commands.** It comes from `--workspace <id>` or the saved default (`bentolabs workspaces use <id>`). Passing it positionally misparses the command.
+- **`bentolabs raw` does NOT read stdin.** Pipe a body in and it will be ignored. Use `--data '<json>'` or `--data-file <path>`. The generated commands DO read stdin when it isn't a TTY; `raw` is the exception.
+- **`bentolabs config set` only accepts `api-base`.** Any other key raises `BadParameter`. The default workspace is set with `bentolabs workspaces use`, never `config set`. Tokens are written by `auth login`, never `config set`.
+- **Token-refresh failure clears the keychain.** If another process rotated the refresh token first, the CLI clears local tokens and the next command returns 401. Run `bentolabs auth login` again. This is intentional.
+- **New API endpoints are invisible until `bentolabs refresh`.** The command tree is cached locally. If `bentolabs <group> <command> --help` says "no such command" and you know the endpoint exists, run `bentolabs refresh` first.
+- **`--output` validation only happens on generated commands.** Passing `--output nonsense` to `bentolabs raw` silently falls through to pretty mode instead of erroring. Use `pretty`, `raw`, or `table` only.
+
 ## Troubleshooting
 
 **"no workspace selected"** — Run `scripts/pick-workspace.sh` again, or pass `--workspace <id>` per command.
