@@ -1,5 +1,7 @@
 # BentoLabs skills
 
+[![skills.sh](https://skills.sh/b/BentoLabs-ai/skills)](https://skills.sh/BentoLabs-ai/skills)
+
 Agent Skills for [Bento](https://docs.bentolabs.ai). Skills are packaged instructions that teach AI coding agents how to use a product, library, or service.
 
 Follows the [Agent Skills](https://agentskills.io/) format.
@@ -49,13 +51,19 @@ Drive the Bento platform from your terminal. List traces and signals, script ana
 ```
 skills/
 ├── bentolabs-integrate/
-│   └── SKILL.md
+│   ├── SKILL.md         # narrative + decision flow, < 500 lines
+│   ├── scripts/         # bash + Python the agent runs
+│   └── references/      # deep reference loaded on demand
 └── bentolabs-cli/
-    └── SKILL.md
-skills.sh.json    # skills.sh directory page grouping
+    ├── SKILL.md
+    ├── scripts/
+    └── references/
+skills.sh.json           # skills.sh directory page grouping
 ```
 
-One directory per skill, each with a single `SKILL.md` at its root. Edit any skill in place. The frontmatter `description` is the only signal Claude uses to decide whether to load the skill into context, so keep it accurate and trigger-rich.
+Each skill follows the [agentskills.io directory convention](https://agentskills.io/specification#directory-structure): `SKILL.md` for instructions, `scripts/` for executable code, `references/` for documentation the agent loads on demand. Edit any file in place.
+
+The frontmatter `description` is the only signal an agent uses to decide whether to load the skill into context. Keep it accurate and trigger-rich.
 
 ## Related
 
