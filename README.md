@@ -49,18 +49,19 @@ Drive the Bento platform from your terminal. List traces and signals, script ana
 ## Repo layout
 
 ```
-bentolabs-integrate/
-├── SKILL.md             # narrative + decision flow, < 500 lines
-├── scripts/             # bash + Python the agent runs
-└── references/          # deep reference loaded on demand
-bentolabs-cli/
-├── SKILL.md
-├── scripts/
-└── references/
+skills/
+├── bentolabs-integrate/
+│   ├── SKILL.md         # narrative + decision flow, < 500 lines
+│   ├── scripts/         # bash + Python the agent runs
+│   └── references/      # deep reference loaded on demand
+└── bentolabs-cli/
+    ├── SKILL.md
+    ├── scripts/
+    └── references/
 skills.sh.json           # skills.sh directory page grouping
 ```
 
-Each skill lives at the repo root and follows the [agentskills.io directory convention](https://agentskills.io/specification#directory-structure): `SKILL.md` for instructions, `scripts/` for executable code, `references/` for documentation the agent loads on demand. Edit any file in place.
+Each skill follows the [agentskills.io directory convention](https://agentskills.io/specification#directory-structure): `SKILL.md` for instructions, `scripts/` for executable code, `references/` for documentation the agent loads on demand. Edit any file in place.
 
 The frontmatter `description` is the only signal an agent uses to decide whether to load the skill into context. Keep it accurate and trigger-rich.
 
