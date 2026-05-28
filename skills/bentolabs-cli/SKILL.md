@@ -66,6 +66,9 @@ Concrete corrections for mistakes that are easy to make. Read these before writi
 
 ## Related
 
-For SDK install, instrumentation, and dashboard integration, use the `bentolabs-integrate` skill. The CLI is for talking to the platform from a terminal; the SDK is for emitting traces from application code.
+- For greenfield SDK install, instrumentation, and dashboard integration, use the `bentolabs-integrate` skill.
+- For porting an existing Raindrop or Langfuse setup to Bento, use the `bentolabs-migrate` skill.
+
+The CLI is for talking to the platform from a terminal; the SDK skills are for emitting traces from application code.
 
 Docs: [docs.bentolabs.ai/cli/installation](https://docs.bentolabs.ai/cli/installation) and [docs.bentolabs.ai/cli/commands](https://docs.bentolabs.ai/cli/commands).

@@ -1,8 +1,8 @@
 ---
 name: bentolabs-integrate
-description: Use when integrating Bento into a Python app, wiring the Google ADK integration (`bento.instrument()`), manually tracking LLM calls with `bento.track_ai`, registering identity getters at `bento.init`, grouping multi-step agent flows with `bento.begin` trajectories, mapping OpenTelemetry GenAI / OpenInference semantic conventions to Bento dashboard columns, debugging missing traces or empty dashboard columns, or migrating from Raindrop or Langfuse. Covers Python SDK install, the `bl_pk_` API key, the four must-pass arguments to `track_ai` (`user_id`, `convo_id`, `model`, `provider`), input/output capture, properties type fidelity, the `flush()` / `shutdown()` lifecycle, and the lower-level OTel transport for apps with an existing TracerProvider.
+description: Use when greenfield-integrating Bento into a Python app with no existing AI observability SDK. Triggers include wiring the Google ADK integration (`bento.instrument()`), manually tracking LLM calls with `bento.track_ai`, registering identity getters at `bento.init`, grouping multi-step agent flows with `bento.begin` trajectories, mapping OpenTelemetry GenAI / OpenInference semantic conventions to Bento dashboard columns, and debugging missing traces or empty dashboard columns. Covers Python SDK install, the `bl_pk_` API key, the four must-pass arguments to `track_ai` (`user_id`, `convo_id`, `model`, `provider`), input/output capture, properties type fidelity, the `flush()` / `shutdown()` lifecycle, and the lower-level OTel transport for apps with an existing TracerProvider. If the project already uses Raindrop or Langfuse, use the `bentolabs-migrate` skill instead.
 metadata:
-  version: "2.0"
+  version: "3.0"
 ---
 
 # Bento
@@ -54,9 +54,9 @@ If section 1g finds Raindrop or Langfuse usage, **ask the user before proceeding
 >
 > Which one?
 
-If they pick migrate, read `references/MIGRATIONS.md` and follow the per-SDK guide. Both SDKs can coexist during the port; only uninstall the old one after Step 5 verify passes.
+If they pick **migrate**, stop here and switch to the `bentolabs-migrate` skill. It covers the source-specific translation guides (Raindrop and Langfuse), the OpenInference instrumentor setup, and the safe coexistence-then-uninstall workflow. Do not try to migrate from this skill.
 
-If they pick fresh integration, continue with the greenfield Step 3 patterns. Note in your summary that the project also runs `<Raindrop|Langfuse>` so the reviewer knows two SDKs will emit spans.
+If they pick **fresh integration**, continue with the greenfield Step 3 patterns below. Note in your summary that the project also runs `<Raindrop|Langfuse>` so the reviewer knows two SDKs will emit spans.
 
 Never silently pick one path.
 
@@ -130,8 +130,6 @@ Concrete corrections the agent will get wrong without being told. Read these bef
 
 For deep reference (public surface, the four kwargs that must be on every call, trajectories, properties, lifecycle, the lower-level OTel transport for apps with an existing `TracerProvider`), read `references/REFERENCE.md`.
 
-For migrations from Raindrop or Langfuse, read `references/MIGRATIONS.md`.
-
 For diagnostics when traces don't appear or columns are empty, read `references/TROUBLESHOOTING.md`.
 
 For deeper docs hosted at `docs.bentolabs.ai` as plain Markdown, see the URL list in `references/DOCS-INDEX.md`.
@@ -139,3 +137,8 @@ For deeper docs hosted at `docs.bentolabs.ai` as plain Markdown, see the URL lis
 ## TypeScript
 
 The TypeScript SDK is in active development and not yet generally available. Do not generate Node or browser instrumentation code from this skill. Point users at `https://docs.bentolabs.ai/typescript` for status.
+
+## Related
+
+- For migrating from an existing SDK (Raindrop or Langfuse) instead of greenfield, use the `bentolabs-migrate` skill.
+- For driving Bento from a terminal after the integration, use the `bentolabs-cli` skill.

@@ -8,7 +8,7 @@ Follows the [Agent Skills](https://agentskills.io/) format.
 
 ## Install
 
-Install both skills:
+Install all three:
 
 ```bash
 npx skills add BentoLabs-ai/skills
@@ -18,6 +18,7 @@ Install one:
 
 ```bash
 npx skills add BentoLabs-ai/skills --skill bentolabs-integrate
+npx skills add BentoLabs-ai/skills --skill bentolabs-migrate
 npx skills add BentoLabs-ai/skills --skill bentolabs-cli
 ```
 
@@ -25,14 +26,25 @@ npx skills add BentoLabs-ai/skills --skill bentolabs-cli
 
 ### bentolabs-integrate
 
-Integrate Bento into a Python app. Wire up `bento.instrument()` for Google ADK, manually track LLM calls with `bento.track_ai`, register identity getters at `bento.init`, group multi-step agent flows with `bento.begin` trajectories, and map OpenTelemetry GenAI / OpenInference attributes to Bento dashboard columns.
+Greenfield integration of Bento into a Python app. Wire up `bento.instrument()` for Google ADK, manually track LLM calls with `bento.track_ai`, register identity getters at `bento.init`, group multi-step agent flows with `bento.begin` trajectories, and map OpenTelemetry GenAI / OpenInference attributes to Bento dashboard columns.
 
 **Use when:**
 
-- Setting up Bento in a new app
-- Adding tracing to an existing Python codebase
+- Setting up Bento in a new app with no existing observability SDK
+- Adding tracing to a Python codebase that has none yet
 - Debugging missing traces or empty dashboard columns
-- Migrating from Raindrop or Langfuse
+- Choosing between the ADK integration and manual `track_ai` per call site
+
+### bentolabs-migrate
+
+Port an existing AI observability or analytics SDK to Bento. Covers the three migration paths (`bento.instrument()` for ADK, OpenInference instrumentors for auto-captured LLM calls, manual translation for everything else) and the source-specific translation guides.
+
+**Use when:**
+
+- Replacing Raindrop with Bento
+- Replacing Langfuse with Bento
+- Converting `@observe`, `raindrop.track_ai`, `langfuse.openai`, or `langfuse.langchain` to Bento equivalents
+- Setting up OpenInference instrumentors against a `BentoLabsSpanProcessor`
 
 ### bentolabs-cli
 
@@ -54,6 +66,10 @@ skills/
 │   ├── SKILL.md         # narrative + decision flow, < 500 lines
 │   ├── scripts/         # bash + Python the agent runs
 │   └── references/      # deep reference loaded on demand
+├── bentolabs-migrate/
+│   ├── SKILL.md
+│   ├── scripts/
+│   └── references/
 └── bentolabs-cli/
     ├── SKILL.md
     ├── scripts/

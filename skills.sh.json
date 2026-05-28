@@ -4,9 +4,10 @@
   "groupings": [
     {
       "title": "Bento",
-      "description": "Agent Skills for integrating Bento into your application and running the Bento CLI from your terminal.",
+      "description": "Agent Skills for integrating Bento into your application, migrating from existing observability SDKs, and running the Bento CLI from your terminal.",
       "skills": [
         "bentolabs-integrate",
+        "bentolabs-migrate",
         "bentolabs-cli"
       ]
     }
