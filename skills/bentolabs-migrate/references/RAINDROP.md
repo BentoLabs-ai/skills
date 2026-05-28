@@ -4,11 +4,10 @@ For `import raindrop.analytics` users. Full translation table is at `https://doc
 
 ## Step order
 
-1. `pip install bentolabs-sdk`. Do not uninstall `raindrop-ai` yet.
-2. **Path A first.** If Google ADK is in use, add `bento.init(...)` + `bento.instrument()` at startup. See `references/PATHS.md` Path A.
-3. **Path B next.** Raindrop's `auto_instrument=True` covered OpenAI / Anthropic / Bedrock via Traceloop. Preserve that auto-capture by installing the matching OpenInference instrumentors and wiring them to a `BentoLabsSpanProcessor`. See `references/PATHS.md` Path B.
-4. **Path C for the rest.** Walk the renames below for every remaining call site.
-5. Run `scripts/verify.py`. Confirm the row lands. THEN `pip uninstall raindrop-ai`.
+1. `pip install bentolabs-sdk`. Do not uninstall `raindrop-ai` yet. (Using Google ADK? Skip to the one-line `bentolabs-sdk[adk]` path in the `bentolabs-integrate` skill instead.)
+2. **Path B first.** Raindrop's `auto_instrument=True` covered OpenAI / Anthropic / Bedrock via Traceloop. Preserve that auto-capture by installing the matching OpenInference instrumentors and wiring them to a `BentoLabsSpanProcessor`. See `references/PATHS.md` Path B.
+3. **Path C for the rest.** Walk the renames below for every remaining call site.
+4. Run `scripts/verify.py`. Confirm the row lands. THEN `pip uninstall raindrop-ai`.
 
 ## Per-call rename
 
@@ -95,7 +94,7 @@ with raindrop.begin(event="user_turn", convo_id=convo_id) as interaction: ...
 with bento.begin(event="user_turn", convo_id=convo_id) as interaction: ...
 ```
 
-`bento.begin` takes `session_id=`, but it also accepts `convo_id=` as an alias for back-compat across the SDK. If the original code passed `convo_id`, leaving it works; new code prefers `session_id` on `begin`.
+`bento.begin` takes `convo_id=` (same as `track_ai`). Leave Raindrop's `convo_id=` as is — it's already the right kwarg. There is no `session_id=` on `begin`; passing it raises a `TypeError`.
 
 ### `raindrop.flush()` and `raindrop.shutdown()`
 
@@ -104,5 +103,5 @@ Same names: `bento.flush()`, `bento.shutdown()`. Same semantics.
 ## Common pitfalls
 
 - **Forgetting `provider=`.** Raindrop's `auto_instrument` set provider from the LLM SDK module. Bento does not, even after migration. Pass it explicitly.
-- **`convo_id` vs `session_id` mixup.** Raindrop used `convo_id` everywhere. Bento uses `session_id` on `init`, `begin`, `update_current_trace`, `propagate_attributes`; only `track_ai` keeps `convo_id`. Same value, different kwarg name.
+- **`convo_id` vs `session_id` mixup.** Raindrop used `convo_id` everywhere. Bento keeps `convo_id` on `track_ai` and `begin`, but uses `session_id` on `init`, `update_current_trace`, and `propagate_attributes`. Same value, different kwarg name.
 - **Uninstalling Raindrop too early.** Both can coexist during the port. Spans land in different backends; nothing breaks.

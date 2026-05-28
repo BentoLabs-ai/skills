@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Step 1: Discover the codebase before instrumenting.
 #
-# Run each section from the repo root. The output drives every later
-# decision (which web framework, which LLM SDKs, whether Google ADK is
-# in use, whether OpenTelemetry is already wired, whether a competing
-# SDK like Raindrop or Langfuse is installed). Do NOT skip this step.
+# WHAT THIS DOES
+#   Step 1 of the integration. It looks through the codebase so you can
+#   choose a path in Step 3. It reports the language, the web framework,
+#   every LLM call site, any agent framework that might have a native
+#   exporter, Google ADK, existing OpenTelemetry setup, where env vars
+#   live, and any competing SDK (Raindrop or Langfuse).
 #
-# Output is the input to Step 1h ("summarize before continuing").
+# IT ONLY READS FILES. It changes nothing. Run it from the top folder of
+# the project. Read every section before you decide anything, and use
+# what you find to write the summary at the end of Step 1.
 
 # 1a. Confirm language and Python version.
 echo "--- 1a: language / Python ---"
@@ -37,6 +40,14 @@ grep -rnE "bedrock-runtime|invoke_model|converse" --include="*.py" . 2>/dev/null
 # Agent frameworks
 grep -rnE "ChatOpenAI|ChatAnthropic|ChatGoogleGenerativeAI|llm\.(invoke|ainvoke|predict|apredict)|\.bind_tools\(" --include="*.py" . 2>/dev/null
 grep -rnE "from llama_index|Settings\.llm|VectorStoreIndex|query_engine" --include="*.py" . 2>/dev/null
+
+# 1c2. Agent / orchestration frameworks that may have their OWN exporter.
+#      This is the most important signal for Step 3: if one of these is
+#      here, the direct-export path (point its exporter at Bento, install
+#      no Bento SDK) is your first choice. We also search .ts and .js
+#      files, because these frameworks are often used from TypeScript.
+echo "--- 1c2: agent frameworks (check for a native exporter first) ---"
+grep -rnE "@mastra/|from mastra|langchain|langgraph|llama_index|llamaindex|crewai|pydantic_ai|openai-agents|@openai/agents|generateText|streamText" --include="*.py" --include="*.ts" --include="*.js" . 2>/dev/null | head -20
 
 # 1d. Check for Google ADK. PRIORITY SIGNAL for Step 3.
 #     If ADK is present, Step 3 Path A applies: a three-line install

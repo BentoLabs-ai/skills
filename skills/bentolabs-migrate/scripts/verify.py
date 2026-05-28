@@ -8,7 +8,7 @@ verify passes AND every real call site you ported renders a complete
 row in the dashboard.
 """
 
-import bentolabs_sdk.analytics as bento
+import bentolabs_sdk as bento
 
 bento.track_ai(
     event="migration_verify",

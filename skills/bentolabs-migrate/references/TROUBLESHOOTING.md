@@ -12,7 +12,7 @@ When the verify script doesn't land a row, or ported call sites render with empt
 ## Ported call site renders, but columns are empty
 
 - **`provider` empty.** Bento does NOT auto-infer provider from the model name. Pass `provider="openai"` / `"anthropic"` / `"aws_bedrock"` etc. explicitly on every `track_ai` call.
-- **`convo_id` empty on `track_ai`.** You passed `session_id=` instead of `convo_id=`. The kwarg name only differs on `track_ai`; everywhere else (`init`, `begin`, `update_current_trace`, `propagate_attributes`) uses `session_id`. This is the single biggest Langfuse-migration footgun.
+- **`convo_id` empty on `track_ai` or `begin`.** You passed `session_id=` instead of `convo_id=`. `track_ai` and `begin` take `convo_id=`; `init`, `update_current_trace`, and `propagate_attributes` take `session_id=`. This is the single biggest Langfuse-migration footgun.
 - **`user_id` empty.** Either the per-call kwarg wasn't threaded through, or the init-time getter returned `None`. Add a `print(...)` inside the getter to confirm it's firing at the right time.
 - **`model` empty.** Pass `model=` explicitly. For Path B (OpenInference instrumentors), the instrumentor sets `gen_ai.request.model` automatically from the LLM SDK call; check that the call goes through the instrumented client.
 - **Bedrock model grouped under `anthropic`.** Pass `provider="aws_bedrock"`, not `"anthropic"`. The model id is intentionally ambiguous.

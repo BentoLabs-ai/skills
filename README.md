@@ -26,23 +26,23 @@ npx skills add BentoLabs-ai/skills --skill bentolabs-cli
 
 ### bentolabs-integrate
 
-Greenfield integration of Bento into a Python app. Wire up `bento.instrument()` for Google ADK, manually track LLM calls with `bento.track_ai`, register identity getters at `bento.init`, group multi-step agent flows with `bento.begin` trajectories, and map OpenTelemetry GenAI / OpenInference attributes to Bento dashboard columns.
+Greenfield integration of Bento into a new app. Three paths in order of preference: direct export (point an agent SDK's own OpenTelemetry / OpenInference exporter at Bento — no Bento SDK, any language), the one-line Google ADK auto-instrument (`bentolabs-sdk[adk]` + `bento.instrument()`), and manual `bento.track_ai` per LLM call. Also registers identity getters at `bento.init`, groups multi-step flows with `bento.begin`, and maps GenAI / OpenInference attributes to dashboard columns.
 
 **Use when:**
 
 - Setting up Bento in a new app with no existing observability SDK
-- Adding tracing to a Python codebase that has none yet
+- Pointing a LangChain / Pydantic AI / Mastra / Vercel AI SDK app at Bento
 - Debugging missing traces or empty dashboard columns
-- Choosing between the ADK integration and manual `track_ai` per call site
+- Choosing between direct export, the ADK auto-instrument, and manual `track_ai`
 
 ### bentolabs-migrate
 
-Port an existing AI observability or analytics SDK to Bento. Covers the three migration paths (`bento.instrument()` for ADK, OpenInference instrumentors for auto-captured LLM calls, manual translation for everything else) and the source-specific translation guides.
+Move an existing observability or agent stack to Bento. Covers three paths in priority order — direct OTLP export (repoint an agent SDK's own exporter at Bento, no Bento SDK), OpenInference instrumentors wired to a `BentoLabsSpanProcessor`, and manual per-call translation — plus the source-specific guides for Raindrop and Langfuse.
 
 **Use when:**
 
-- Replacing Raindrop with Bento
-- Replacing Langfuse with Bento
+- Replacing Raindrop or Langfuse with Bento
+- Sending Mastra / LangChain / Pydantic AI / Vercel AI SDK traces to Bento by repointing its exporter
 - Converting `@observe`, `raindrop.track_ai`, `langfuse.openai`, or `langfuse.langchain` to Bento equivalents
 - Setting up OpenInference instrumentors against a `BentoLabsSpanProcessor`
 

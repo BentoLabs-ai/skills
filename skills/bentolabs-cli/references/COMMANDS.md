@@ -41,9 +41,16 @@ bentolabs raw <METHOD> <PATH> [--data '<json>'] [--data-file <path>] [--output <
 
 Re-pull the command list from the API. Run this when a new endpoint is missing from `--help`. Prints how many operations were cached.
 
-## `config show`
+## `config`
 
-Print the active CLI configuration and the path to the config file on disk. Tokens are written by `auth login`. The default workspace is written by `workspaces use`. The config file is created with `0600` permissions.
+Read or change the small set of CLI settings stored on disk.
+
+| Command | Effect |
+|---|---|
+| `bentolabs config show` | Prints the active configuration and the path to the config file. |
+| `bentolabs config set api-base <url>` | Points the CLI at a different Bento API base URL. |
+
+`config set` only accepts the one key, `api-base`. Any other key raises `BadParameter`. Two things you might expect to set here are set elsewhere instead: tokens are written by `auth login`, and the default workspace is written by `workspaces use` — never by `config set`. The config file is created with `0600` permissions.
 
 ## `version`
 

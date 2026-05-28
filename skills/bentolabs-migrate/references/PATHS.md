@@ -1,35 +1,23 @@
 # The three migration paths
 
-Apply in order. Fall through on a miss. Most projects end up using **Path B** for the bulk of auto-captured LLM calls plus **Path C** for the handful of bespoke decorators or spans.
+Apply in order, fall through on a miss. Agent-SDK migrations usually end on **Path A**. Raindrop/Langfuse migrations usually end on **Path B** for the auto-captured calls plus **Path C** for the bespoke ones.
 
-## Path A: `bento.instrument()` for Google ADK
+**Using Google ADK?** Don't migrate it here — the one-line `bentolabs-sdk[adk]` auto-instrument path in the `bentolabs-integrate` skill is simpler.
 
-Applies when the app uses Google ADK. Three lines at startup. Zero per-call code.
+## Path A: direct export (no Bento SDK)
 
-```bash
-pip install "bentolabs-sdk[adk]"
-```
+Applies when the agent SDK has its own OpenTelemetry / OpenInference exporter that can point at an arbitrary endpoint with a `Bearer` header. You repoint it at Bento and install nothing.
 
-```python
-import bentolabs_sdk as bento
+This is the first choice. The full per-SDK support matrix and config snippets (Mastra, Vercel AI SDK, LangChain, Pydantic AI, and the generic OpenTelemetry form) live in **`references/NATIVE-EXPORT.md`**.
 
-bento.init(
-    user_id=lambda: get_current_user_id(),
-    session_id=lambda: get_current_session_id(),
-)
-bento.instrument()
-```
+## Path B: OpenInference instrumentor
 
-Every ADK agent run, tool call, and the LLM calls ADK makes are captured automatically. The user and session getters tag every span with `gen_ai.user.id` and `gen_ai.conversation.id`.
-
-## Path B: OpenInference instrumentors
-
-Applies when the source SDK auto-captured LLM calls. Common signals from `scripts/detect.sh`:
+Applies when there's no native exporter but the source SDK auto-captured LLM calls. Common signals from `scripts/detect.sh`:
 
 - **Raindrop**: `auto_instrument=True` in `raindrop.init(...)`.
 - **Langfuse**: `from langfuse.openai import OpenAI`, `from langfuse.langchain import CallbackHandler`, or similar drop-ins.
 
-Install the matching instrumentor for each LLM SDK the app uses. `scripts/install-instrumentors.sh` does this:
+Install the matching instrumentor for each LLM SDK. `scripts/install-instrumentors.sh` does this:
 
 ```bash
 ./scripts/install-instrumentors.sh openai anthropic langchain
@@ -59,13 +47,15 @@ After this:
 
 No `bento.track_ai` calls needed for anything Path B covers.
 
-## Path C: Manual translation
+`BentoLabsSpanProcessor` is the Python span processor. If you already run your own `TracerProvider` and just want the exporter, use `BentoLabsTraceExporter` directly (see `https://docs.bentolabs.ai/python/otel-transport.md`).
 
-Applies when neither Path A nor Path B covers the call site. Anything bespoke: custom decorators (`@observe(as_type="generation", ...)`, `@raindrop.task`), hand-rolled `track_ai` calls, score and metric reporting that the source SDK had but Bento doesn't.
+## Path C: manual translation
+
+Applies when neither Path A nor Path B covers the call site. Anything bespoke: custom decorators (`@observe(as_type="generation", ...)`, `@raindrop.task`), hand-rolled `track_ai` calls, score and metric reporting the source SDK had but Bento doesn't.
 
 Follow the per-SDK guide:
 
 - **Raindrop**: `references/RAINDROP.md`
 - **Langfuse**: `references/LANGFUSE.md`
 
-Both guides walk import rename, init translation, decorator translation, and the convo_id / session_id naming.
+Both guides walk the import rename, init translation, decorator translation, and the `convo_id` / `session_id` naming. Remember: `track_ai` and `begin` take `convo_id=`; everywhere else takes `session_id=`.

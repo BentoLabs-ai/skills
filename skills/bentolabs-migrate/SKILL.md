@@ -1,110 +1,115 @@
 ---
 name: bentolabs-migrate
-description: Use when migrating an existing AI observability or analytics SDK to Bento. Triggers include "migrate from Raindrop", "migrate from Langfuse", "replace raindrop-ai", "replace langfuse", "port `raindrop.track_ai` to bento", "convert `@observe` to bento", "we already have Raindrop installed", "we already have Langfuse installed", existing usage of `raindrop.analytics`, `raindrop.identify`, `raindrop.track_signal`, `@observe`, `from langfuse.openai`, `from langfuse.langchain`, `langfuse.score`, or `langfuse.get_prompt`. Covers the three migration paths (Path A `bento.instrument()` for ADK, Path B OpenInference instrumentors for auto-captured LLM calls, Path C manual per-call translation), the `convo_id` vs `session_id` kwarg footgun, `provider=` now required (Bento does not auto-infer), the OpenInference instrumentor setup, and the safe coexistence window where both SDKs run side by side until verification passes. Do NOT use for greenfield integration; use `bentolabs-integrate` instead.
+description: Use when moving an existing AI observability or agent stack to Bento. Covers two cases — an old analytics SDK (Raindrop, Langfuse), or an agent SDK (Mastra, OpenAI Agents SDK, LangChain/LangGraph, LlamaIndex, Vercel AI SDK, CrewAI, Pydantic AI) whose traces currently go to Arize, Phoenix, Langfuse, or LangSmith. Triggers include "migrate from Raindrop", "migrate from Langfuse", "replace raindrop-ai", "replace langfuse", "send our <SDK> traces to Bento", "point our OpenTelemetry exporter at Bento", and existing usage of `@observe`, `from langfuse.openai`, `raindrop.track_ai`, `langfuse.score`, `ArizeExporter`, or `OTLPSpanExporter`. Presents the three migration paths in priority order — Path A direct OTLP export with no Bento SDK installed, Path B OpenInference instrumentor wired to a `BentoLabsSpanProcessor`, Path C manual per-call `track_ai`/`begin` — plus the `convo_id` vs `session_id` kwarg footgun, the now-required `provider=`, and the safe coexistence window where both stacks run until verification passes. For a greenfield app with no SDK at all, use `bentolabs-integrate`.
 metadata:
-  version: "1.0"
+  version: "2.0"
 ---
 
 # Bento migration
 
-Use this skill when an existing AI observability or analytics SDK is already installed and the user wants to move to Bento. The two supported source SDKs today are **Raindrop** (`raindrop-ai`, `import raindrop.analytics`) and **Langfuse** (Python SDK v3, `from langfuse`, `@observe`).
+Use this skill when something already sends traces somewhere, and you want those traces to go to Bento instead. There are two common situations:
 
-If the project has no existing tracing SDK, use `bentolabs-integrate` instead.
+- **An old analytics SDK is installed** — Raindrop (`raindrop-ai`) or Langfuse (`from langfuse`, `@observe`).
+- **An agent SDK is sending traces to another tool** — Mastra, OpenAI Agents SDK, LangChain/LangGraph, LlamaIndex, Vercel AI SDK, CrewAI, or Pydantic AI, currently pointed at Arize, Phoenix, Langfuse, or LangSmith.
 
-## Migration workflow
+One fact makes the whole migration simpler: **Bento is just an OpenTelemetry collector.** It accepts standard OpenTelemetry traces over HTTP at `${BENTOLABS_BASE_URL}/v1/traces`, using the header `Authorization: Bearer bl_pk_...`, and it reads the standard `gen_ai.*` and `openinference.*` attributes. That is why the first migration path below often installs nothing at all — you just change where an exporter you already have sends its traces.
 
-Copy this checklist into the response and check items off:
+If the project has no tracing at all, this is the wrong skill. Use `bentolabs-integrate` instead.
+
+## The plan
+
+Copy this checklist into your reply and tick the boxes as you go.
 
 ```
 Bento migration progress:
-- [ ] Step 1: Detect. Confirm which SDK is in use (Raindrop or Langfuse) and where it's wired in.
-- [ ] Step 2: Install Bento. Add bentolabs-sdk alongside the existing SDK. Do NOT uninstall yet.
-- [ ] Step 3: Pick the path. A (ADK present), B (auto-capture via OpenInference), C (manual translation). Most projects use a mix of B and C.
-- [ ] Step 4: Port the code. Walk references/RAINDROP.md or references/LANGFUSE.md for the source-specific translation.
-- [ ] Step 5: Verify. Run scripts/verify.py and confirm one row appears in the Bento dashboard. Only THEN uninstall the old SDK.
+- [ ] Step 1: Find out what the project uses today.
+- [ ] Step 2: Get a Bento API key. Only install the Bento SDK if Step 3 needs it.
+- [ ] Step 3: Pick ONE path: A (direct export), B (instrumentor), or C (manual).
+- [ ] Step 4: Wire up the path you picked.
+- [ ] Step 5: Run one real flow, check the dashboard, THEN remove the old tool.
 ```
 
-The old SDK stays installed during the port. Removing it before verify creates a window where neither tool is recording. Keep both, ship the diff, verify, then uninstall.
+Important rule for the whole migration: **do not remove the old SDK or old exporter until Step 5 passes.** If you remove it first, there is a window where nothing is recording. Keep both running, get Bento working, confirm it, and only then take the old one out.
 
-## Step 1: Detect the source SDK
+## Step 1: Find out what the project uses today
 
-Run `scripts/detect.sh` from the repo root. It greps for Raindrop and Langfuse imports, decorators, and the package names in `pyproject.toml` / `requirements*.txt`.
+Run the helper script from the top folder of the project:
 
-The output tells you:
+```bash
+./scripts/detect.sh
+```
 
-- Which SDK is in use (Raindrop, Langfuse, or both).
-- Which auto-capture or drop-in patterns are present (`auto_instrument=True`, `langfuse.openai`, `langfuse.langchain`, `@observe`, etc.).
-- Which call sites need manual translation.
+It only reads files; it changes nothing. It prints several sections: the old tracing SDK (if any), the agent SDK in use and whether it has its own exporter, where traces currently go, and any raw LLM clients.
 
-Summarize the findings to the user before editing. Confirm migrate vs fresh-integration-alongside is what they want; some users intentionally run two SDKs in parallel for A/B comparison.
+Read every section. Then write a short summary back to the user — what you found, and which path you think fits (Step 3 explains the paths). Before you edit anything, confirm the user actually wants to move to Bento. Some teams keep two tools running on purpose to compare them, so ask if that's the case.
 
-## Step 2: Install Bento
+## Step 2: Get a Bento API key
 
-Run `scripts/install-bento.sh`. It picks the package manager (uv, poetry, pdm, or pip), installs `bentolabs-sdk` (with the `[adk]` extra if you set `ADK_PRESENT=1`), and adds a `BENTOLABS_API_KEY` placeholder to `.env`.
+Every path needs a key. Get one from `https://platform.bentolabs.ai`. It starts with `bl_pk_`. Put it in the environment as `BENTOLABS_API_KEY`.
 
-Keys come from `https://platform.bentolabs.ai`. Prefix `bl_pk_`. The SDK validates the key up front and raises `BentoAuthError("invalid_api_key_format")` on a bad value before any network I/O.
+Whether you install the Bento SDK depends on the path you pick in Step 3:
 
-**Do not uninstall the source SDK yet.** Both can coexist; their spans land in different backends.
+- **Path A (direct export) installs nothing from Bento.** You only need the key and the base URL. Skip the install.
+- **Path B and Path C need the SDK.** Run `./scripts/install-bento.sh` to add it. If the app uses Google ADK, set `ADK_PRESENT=1` first so the script adds the `[adk]` extra. The script keeps the old SDK installed, which is what you want.
 
-## Step 3: Pick the migration path
+If you are not sure which path you'll use yet, do Step 3 first and come back.
 
-The three paths apply in order. Fall through to the next on a miss. Most projects end up using **Path B** for the bulk of the auto-captured LLM calls plus **Path C** for the handful of bespoke decorators or spans.
+## Step 3: Pick ONE path
 
-| Path | When it applies | What changes |
-|---|---|---|
-| **A — `bento.instrument()`** | App uses Google ADK. | Three lines at startup. No per-call code. |
-| **B — OpenInference instrumentor** | App used Raindrop's `auto_instrument` OR Langfuse's `langfuse.openai` / `langfuse.langchain` drop-ins. | Install the matching `openinference-instrumentation-<openai\|anthropic\|bedrock\|langchain>` and register it with a `BentoLabsSpanProcessor`. Call sites stay untouched. |
-| **C — manual translation** | Everything else (custom decorators, bespoke spans, `raindrop.track_ai`, `@observe(as_type="generation")`, etc.). | Per-call-site rename. See `references/RAINDROP.md` or `references/LANGFUSE.md`. |
+There are three ways to get traces into Bento. They are listed best-first. Read each one, decide if it fits, and **stop at the first one that matches.** Most agent-SDK migrations end on Path A. Most Raindrop/Langfuse migrations end on Path B for the auto-captured calls, plus Path C for the handful of custom ones.
 
-Read `references/PATHS.md` for the per-path setup snippets (Path A startup, Path B `BentoLabsSpanProcessor` wiring, Path C entry points). Run `scripts/install-instrumentors.sh` to install the OpenInference instrumentors for the LLM SDKs you found in Step 1.
+Before you start: **if the app uses Google ADK, do not migrate it here.** There is a simpler one-line option (`bentolabs-sdk[adk]`) in the `bentolabs-integrate` skill. Use that for ADK and only come back here for anything ADK doesn't cover.
 
-## Step 4: Port the code
+**Path A — direct export (try this first).** This fits when the agent SDK has its own OpenTelemetry or OpenInference exporter that you can point at any URL with a `Bearer` header. If it does, you change two settings on that exporter — the endpoint and the auth header — and you install nothing from Bento. This works in any language, including TypeScript. To check whether your SDK supports this, open `references/NATIVE-EXPORT.md`: it has a table of common SDKs, a copy-paste snippet for each, and what to do if yours isn't listed.
 
-Pick the per-SDK translation guide that matches what Step 1 found:
+**Path B — OpenInference instrumentor.** This fits when there is no native exporter, but there is an `openinference-instrumentation-<sdk>` package for your LLM SDK. This is the path for Raindrop's `auto_instrument=True` and for Langfuse's drop-in clients (`from langfuse.openai`, `from langfuse.langchain`). You install the instrumentor and register it on a `BentoLabsSpanProcessor`; your LLM call sites stay exactly as they are. Install the instrumentors with `./scripts/install-instrumentors.sh openai anthropic ...` and read `references/PATHS.md` for the wiring.
 
-- **Raindrop**: read `references/RAINDROP.md`. Replaces `import raindrop.analytics as raindrop` with `import bentolabs_sdk as bento`. Translates `raindrop.init`, `raindrop.track_ai`, `raindrop.identify`, `raindrop.track_signal`, `@raindrop.task`.
-- **Langfuse**: read `references/LANGFUSE.md`. Replaces `Langfuse(...)` / `get_client()` with `bento.init`. Translates `@observe`, `propagate_attributes`, `update_current_trace`, `update_current_observation`, `langfuse.score`, `langfuse.get_prompt`.
+**Path C — manual translation.** This is the last resort, for everything the first two paths don't cover: custom decorators, hand-written `track_ai` calls, bespoke spans. You rename each call site to `bento.track_ai` or `bento.begin` by hand. The exact renames for each old SDK are in `references/RAINDROP.md` and `references/LANGFUSE.md`.
 
-Both guides flag the biggest footgun in Bento: **`track_ai` uses `convo_id=`. Everywhere else uses `session_id=`.** Same value, different kwarg name.
+## Step 4: Wire up the path you picked
 
-## Step 5: Verify and uninstall
+- **Path A:** Follow the snippet for your SDK in `references/NATIVE-EXPORT.md`. Set the endpoint to `${BENTOLABS_BASE_URL}/v1/traces` and the header to `Authorization: Bearer ${BENTOLABS_API_KEY}`. Leave the old exporter in place for now.
+- **Path B:** Register each instrumentor on a `BentoLabsSpanProcessor`, following `references/PATHS.md`. If you are coming from Langfuse, also swap `from langfuse.openai import OpenAI` back to the plain `from openai import OpenAI` — the instrumentor wraps the plain client.
+- **Path C:** Open the guide for your old SDK — `references/RAINDROP.md` or `references/LANGFUSE.md` — and walk it call site by call site.
 
-Run `scripts/verify.py`. It sends one `hello_world` event, flushes, and a row should appear in the dashboard within seconds.
+## Step 5: Check it works, then remove the old tool
 
-For every real call site you ported in Step 4, run the user flow once and confirm one row appears with all six fields populated: `provider`, `model`, `input`, `output`, `user_id`, `convo_id`. If any column is empty, return to Step 4 for that site.
+First, prove the connection works at all. How you do this depends on your path:
 
-Only after every column is filled, uninstall the source SDK:
+- **Path B or Path C** (the Bento SDK is installed): run `python scripts/verify.py`. It sends one event and flushes it, and a row should show up in the dashboard within a few seconds.
+- **Path A** (direct export, no Bento SDK): there is no script to run — `verify.py` imports the Bento SDK, which you did not install on this path. Instead, just run one real flow of your app and check the dashboard directly, as described next.
 
-- **Raindrop**: `pip uninstall raindrop-ai`. Remove `RAINDROP_*` env vars.
-- **Langfuse**: `pip uninstall langfuse`. Remove `LANGFUSE_*` env vars.
+Next, prove your real code works. For every call site you changed (and, on Path A, every kind of flow), run the user flow once and open the dashboard. Check that the new row has all six of these columns filled in: `provider`, `model`, `input`, `output`, `user_id`, `convo_id`. If any column is empty, go back to Step 4 and fix it.
 
-## Gotchas
+Only after every column is filled, remove the old tool:
 
-Concrete corrections the agent will get wrong without being told.
+- Raindrop: `pip uninstall raindrop-ai`, and delete the `RAINDROP_*` env vars.
+- Langfuse: `pip uninstall langfuse`, and delete the `LANGFUSE_*` env vars.
+- A repointed exporter (Path A): delete the old exporter's config.
 
-- **Do NOT uninstall the source SDK before verify passes.** The window between uninstall and successful Bento verification is a gap where nothing records. Keep both during the port.
-- **`track_ai` uses `convo_id=`, everywhere else uses `session_id=`.** The single biggest footgun, especially when porting from Langfuse where everything is `session_id`. `bento.init`, `bento.begin`, `bento.update_current_trace`, `bento.propagate_attributes` all take `session_id=`; only `track_ai` takes `convo_id=`. Same value, different kwarg name.
-- **`provider=` is now required and not auto-inferred from the model name.** Raindrop's `auto_instrument=True` and Langfuse's drop-ins guessed provider from the SDK module they wrapped. Bento does not. Pass `provider="openai"` / `"anthropic"` / `"aws_bedrock"` / `"google"` explicitly on every `track_ai` call.
-- **A Bedrock model id like `anthropic.claude-3-sonnet-20240229-v1:0` needs `provider="aws_bedrock"`, NOT `"anthropic"`.** Common gotcha if the migrator was relying on Langfuse's inference.
-- **Langfuse drop-in clients must be replaced with stock clients.** After installing `openinference-instrumentation-openai` and registering it with `BentoLabsSpanProcessor`, replace `from langfuse.openai import OpenAI` with stock `from openai import OpenAI`. The instrumentor wraps the stock client.
-- **Raindrop's `auto_instrument=True` covered OpenAI / Anthropic / Bedrock via Traceloop.** Preserve that auto-capture by registering the matching OpenInference instrumentor; don't try to wrap every call site by hand.
-- **Drop `langfuse.score(...)`, `langfuse.get_prompt(...)`, and dataset calls.** No direct equivalents. Move score values to `properties={"score_<name>": value}` on `track_ai`. Prompt management isn't part of Bento; keep the source-of-truth elsewhere.
-- **`@raindrop.task` and `@bento.tool` differ in scope.** Raindrop collapsed task and tool into one decorator. Bento uses `@bento.tool` for everything tool-shaped. `@bento.interaction` is for top-level handlers; `@bento.tool` is for helpers.
-- **Both SDKs emitting spans for the same call site is fine, but expect duplicates in your old tool while migrating.** They write to different backends; Bento ignores Raindrop / Langfuse spans and vice versa.
+The exact per-SDK commands are also in `references/RAINDROP.md` and `references/LANGFUSE.md`.
 
-## Reference
+## Things that are easy to get wrong
 
-For the per-path setup snippets (Path A ADK, Path B OpenInference instrumentors, Path C manual entry points), read `references/PATHS.md`.
+Read these before you start. They are the mistakes that happen most often.
 
-For the Raindrop translation guide, read `references/RAINDROP.md`.
+- **Don't remove the old tool early.** Again: keep it until Step 5 passes. Otherwise nothing records in the gap.
+- **`track_ai` and `begin` use `convo_id=`. `init`, `update_current_trace`, and `propagate_attributes` use `session_id=`.** It is the same value (the conversation/session id) but the keyword name is different depending on the function. This is the single biggest mistake when coming from Langfuse, where everything was `session_id`. If a `track_ai` or `begin` call lands without a session in the dashboard, check the keyword name first. Note: passing `session_id=` to `begin` is not just ignored — it raises a `TypeError`.
+- **You must pass `provider=` yourself now.** Bento does not guess the provider from the model name. Always pass it, e.g. `provider="openai"`. One catch: a Bedrock model id like `anthropic.claude-3-sonnet-...` needs `provider="aws_bedrock"`, not `"anthropic"`.
+- **On Path A, the exporter has to send `Authorization: Bearer`.** Some exporters send a different header by default and Bento will reject the traces with no clear error. The classic example is Mastra's `ArizeExporter`, which switches to Arize's own headers if `ARIZE_SPACE_ID` is set in the environment. `references/NATIVE-EXPORT.md` explains how to avoid this.
 
-For the Langfuse translation guide, read `references/LANGFUSE.md`.
+The mistakes that are specific to one old SDK are in `references/RAINDROP.md` and `references/LANGFUSE.md`. Read the one that matches your project.
 
-For diagnostics when traces don't appear or columns are empty, read `references/TROUBLESHOOTING.md`.
+## Where the details live
 
-Deeper docs live at `https://docs.bentolabs.ai/migrations/raindrop.md` and `https://docs.bentolabs.ai/migrations/langfuse.md`.
+- `references/NATIVE-EXPORT.md` — Path A: the per-SDK table and copy-paste config.
+- `references/PATHS.md` — Path B and Path C setup, with code.
+- `references/RAINDROP.md` and `references/LANGFUSE.md` — the line-by-line rename guides for each old SDK.
+- `references/TROUBLESHOOTING.md` — what to do when traces don't show up or columns are empty.
 
-## Related
+The full online guides are at `https://docs.bentolabs.ai/migrations/raindrop.md` and `https://docs.bentolabs.ai/migrations/langfuse.md`.
 
-- For a greenfield install with no existing SDK, use `bentolabs-integrate`.
-- For driving the platform from a terminal after the migration, use `bentolabs-cli`.
+## Related skills
+
+- Starting from nothing (no tracing SDK at all)? Use `bentolabs-integrate`.
+- Want to read traces from the terminal after migrating? Use `bentolabs-cli`.

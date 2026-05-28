@@ -4,11 +4,10 @@ For users of the Langfuse Python SDK v3 (`from langfuse`, `@observe`, `langfuse.
 
 ## Step order
 
-1. `pip install bentolabs-sdk`. Do not uninstall `langfuse` yet.
-2. **Path A first.** If Google ADK is in use, add `bento.init(...)` + `bento.instrument()` at startup. See `references/PATHS.md` Path A.
-3. **Path B next.** For each Langfuse drop-in or callback handler, install the matching OpenInference instrumentor and wire it to a `BentoLabsSpanProcessor`. See `references/PATHS.md` Path B.
-4. **Path C for the rest.** Walk the renames below for every remaining `@observe` and helper call.
-5. Run `scripts/verify.py`. Confirm the row lands. THEN `pip uninstall langfuse` and remove `LANGFUSE_*` env vars.
+1. `pip install bentolabs-sdk`. Do not uninstall `langfuse` yet. (Using Google ADK? Skip to the one-line `bentolabs-sdk[adk]` path in the `bentolabs-integrate` skill instead.)
+2. **Path B first for the drop-ins.** For each Langfuse drop-in or callback handler, install the matching OpenInference instrumentor and wire it to a `BentoLabsSpanProcessor`. See `references/PATHS.md` Path B.
+3. **Path C for the rest.** Walk the renames below for every remaining `@observe` and helper call.
+4. Run `scripts/verify.py`. Confirm the row lands. THEN `pip uninstall langfuse` and remove `LANGFUSE_*` env vars.
 
 ## Per-call rename
 
@@ -131,7 +130,7 @@ Rename: `bento.flush()`, `bento.shutdown()`. Same semantics.
 
 ## The single biggest gotcha
 
-**`track_ai` uses `convo_id=`. Everywhere else uses `session_id=`.** Langfuse used `session_id` everywhere. In Bento, only `track_ai` takes `convo_id=`. `bento.init`, `bento.begin`, `bento.update_current_trace`, `bento.propagate_attributes` all take `session_id=`.
+**`track_ai` and `begin` use `convo_id=`. The rest use `session_id=`.** Langfuse used `session_id` everywhere. In Bento, `track_ai` and `begin` take `convo_id=`; `bento.init`, `bento.update_current_trace`, and `bento.propagate_attributes` take `session_id=`.
 
 This trips up every Langfuse migrator. If a `track_ai` call site renders without a session column, check the kwarg name first.
 

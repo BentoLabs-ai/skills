@@ -2,72 +2,63 @@
 name: bentolabs-cli
 description: Use when working with `bentolabs-cli`, the command-line client for Bento. Triggers include listing traces, signals, or analytics from a terminal, scripting Bento data into `jq` or `grep` pipelines, automating workflows in CI, hitting any Bento REST endpoint with `bentolabs raw`, signing in with `bentolabs auth login`, picking a default workspace with `bentolabs workspaces use`, refreshing the command list with `bentolabs refresh`, choosing between `pretty` / `raw` / `table` output, debugging "no workspace selected" or `--workspace` errors, and bootstrapping the CLI on a new machine.
 metadata:
-  version: "2.0"
+  version: "2.1"
 ---
 
 # bentolabs-cli
 
-`bentolabs-cli` is the command-line client for [Bento](https://docs.bentolabs.ai). It builds its command tree from the Bento API, so every dashboard surface (traces, signals, analytics, clusters, drift, trajectories) is reachable from the terminal.
+`bentolabs-cli` is the command-line client for [Bento](https://docs.bentolabs.ai). Use this skill when someone wants to drive Bento from a terminal, pipe its data into a script, or hit an API endpoint directly.
 
-Use this skill when the user wants to drive Bento from a terminal, script it into a pipeline, or hit an arbitrary endpoint.
+The thing to understand first: the CLI builds its list of commands from the Bento API itself. That means every surface you see in the dashboard — traces, signals, analytics, clusters, drift, trajectories — has a matching command. It also means the command list can go stale, which is why there's a `refresh` command (more on that below).
 
-## Setup, once per machine
+## Setting it up (do this once per machine)
 
-Run these in order. Each is a small wrapper script in this skill.
+Run these three steps in order. Each one is a small wrapper script in this skill.
 
-1. **Install** the CLI: `scripts/install.sh`. Requires Python 3.10 or higher. Confirms the install with `bentolabs version`.
-2. **Sign in** with `scripts/sign-in.sh`. Opens the browser. Tokens land in the OS keychain and refresh automatically.
-3. **Pick a default workspace** with `scripts/pick-workspace.sh`. After this, drop `--workspace` from later commands. Pass `--workspace <id>` to override.
+1. **Install the CLI.** Run `scripts/install.sh`. You need Python 3.10 or newer. When it finishes it prints the version, which confirms the install worked.
+2. **Sign in.** Run `scripts/sign-in.sh`. It opens your browser to approve the login, then stores your tokens in the operating system's keychain. The tokens refresh themselves, so you normally only do this once.
+3. **Pick a default workspace.** Run `scripts/pick-workspace.sh`. After this you can leave `--workspace` off your commands. If you ever need to target a different workspace for one command, add `--workspace <id>` to it.
 
-The CLI authenticates as a user, not a workspace API key. Anything the user can do in the dashboard, the CLI can do.
+One important detail: the CLI signs in as *you*, the user — not as a workspace API key. So anything you can do in the dashboard, the CLI can do too.
 
 ## Running commands
 
-The command tree is generated from the API. To explore:
+Because the command list comes from the API, the way to explore it is `--help` at each level:
 
-- `bentolabs --help` lists all groups.
-- `bentolabs <group> --help` lists commands inside one group.
-- `bentolabs <group> <command> --help` shows the signature.
+- `bentolabs --help` lists all the command groups.
+- `bentolabs <group> --help` lists the commands inside one group.
+- `bentolabs <group> <command> --help` shows what arguments a command takes.
 
-If a command is missing from `--help`, run `bentolabs refresh` to pull the latest tree from the API.
+If a command you expect is missing from `--help`, the local command list is probably stale. Run `bentolabs refresh` to pull the latest one from the API, then try again.
 
-For how arguments map (path params, the `workspace_id` exception, query params, body), read `references/ARGUMENTS.md`.
+For the deeper details, read these references when you need them:
 
-For the six hand-written built-in commands (`auth`, `workspaces use`, `raw`, `refresh`, `config`, `version`) and what they do, read `references/COMMANDS.md`.
+- How arguments map to a command (path params, the special `workspace_id` case, query params, request body): `references/ARGUMENTS.md`.
+- The six hand-written built-in commands (`auth`, `workspaces use`, `raw`, `refresh`, `config`, `version`) and exactly what each does: `references/COMMANDS.md`.
+- The output modes (`pretty`, `raw`, `table`) and how the response envelope is unwrapped: `references/OUTPUT-MODES.md`.
+- Copy-paste examples (recent traces, a `jq` pipe, a raw request): `scripts/recipes.sh`.
 
-For output modes (`pretty`, `raw`, `table`) and the envelope unwrap, read `references/OUTPUT-MODES.md`.
+## When to use `bentolabs raw`
 
-For copy-paste recipes (5 most recent traces, jq pipe, raw request), read `scripts/recipes.sh`.
+Most of the time a generated command will fit. But if the command list doesn't expose an endpoint cleanly, or you need full control over the request, use `bentolabs raw <METHOD> <PATH>`. With `raw` you fill in the path parameters yourself, including `workspace_id`. Note that `raw` reads its request body only from `--data` or `--data-file` — it does not read from stdin. The full signature is in `references/COMMANDS.md`.
 
-## When to reach for `raw`
+## Things that are easy to get wrong
 
-If the generated command tree doesn't expose an endpoint cleanly, or you need full control over the request, use `bentolabs raw <METHOD> <PATH>`. Fill in path params (including `workspace_id`) yourself. `raw` reads its body from `--data` or `--data-file` only, not from stdin. See `references/COMMANDS.md` for the full signature.
-
-## Gotchas
-
-Concrete corrections for mistakes that are easy to make. Read these before writing commands.
-
-- **`workspace_id` is never a positional argument on generated commands.** It comes from `--workspace <id>` or the saved default (`bentolabs workspaces use <id>`). Passing it positionally misparses the command.
-- **`bentolabs raw` does NOT read stdin.** Pipe a body in and it will be ignored. Use `--data '<json>'` or `--data-file <path>`. The generated commands DO read stdin when it isn't a TTY; `raw` is the exception.
-- **`bentolabs config set` only accepts `api-base`.** Any other key raises `BadParameter`. The default workspace is set with `bentolabs workspaces use`, never `config set`. Tokens are written by `auth login`, never `config set`.
-- **Token-refresh failure clears the keychain.** If another process rotated the refresh token first, the CLI clears local tokens and the next command returns 401. Run `bentolabs auth login` again. This is intentional.
-- **New API endpoints are invisible until `bentolabs refresh`.** The command tree is cached locally. If `bentolabs <group> <command> --help` says "no such command" and you know the endpoint exists, run `bentolabs refresh` first.
-- **`--output` validation only happens on generated commands.** Passing `--output nonsense` to `bentolabs raw` silently falls through to pretty mode instead of erroring. Use `pretty`, `raw`, or `table` only.
+- **`workspace_id` is never a positional argument on a generated command.** It comes from `--workspace <id>`, or from the default you saved with `bentolabs workspaces use`. If you try to pass it positionally, the command misreads its arguments.
+- **`bentolabs raw` ignores stdin.** If you pipe a body into it, the body is silently dropped. Always pass the body with `--data '<json>'` or `--data-file <path>`. (Generated commands *do* read stdin when it isn't a terminal; `raw` is the one exception.)
+- **A token-refresh failure clears the keychain on purpose.** If another process rotated the refresh token before this one did, the CLI clears its local tokens and your next command returns 401. That's intentional — just run `scripts/sign-in.sh` again.
 
 ## Troubleshooting
 
-**"no workspace selected"** — Run `scripts/pick-workspace.sh` again, or pass `--workspace <id>` per command.
+- **"no workspace selected"** — You haven't set a default workspace. Run `scripts/pick-workspace.sh`, or add `--workspace <id>` to the command.
+- **"Not signed in", or a 401** — Your token refresh probably failed because another process rotated the token first. Run `scripts/sign-in.sh` again.
+- **"no such command"** — Your local command list is stale. Run `bentolabs refresh` to pull the latest one. New API endpoints aren't visible until you do.
+- **An `--output` value is rejected** — Only `pretty`, `raw`, and `table` are valid on generated commands. The default is `pretty`. (On `bentolabs raw`, an unknown `--output` value is quietly ignored rather than rejected, so stick to the three valid modes.)
 
-**"Not signed in" or 401** — Token refresh may have failed because another process rotated the refresh token first. Run `scripts/sign-in.sh` again.
+## Related skills
 
-**Command not found** — Run `bentolabs refresh` to pull the latest tree. New API endpoints aren't visible until refresh.
-
-**Unknown `--output` mode** — Only `pretty`, `raw`, and `table` are valid on generated commands. Default is `pretty`.
-
-## Related
-
-- For greenfield SDK install, instrumentation, and dashboard integration, use the `bentolabs-integrate` skill.
-- For porting an existing Raindrop or Langfuse setup to Bento, use the `bentolabs-migrate` skill.
+- To install the SDK and send traces from your application code, use `bentolabs-integrate`.
+- To move an existing Raindrop or Langfuse setup over to Bento, use `bentolabs-migrate`.
 
 The CLI is for talking to the platform from a terminal; the SDK skills are for emitting traces from application code.
 

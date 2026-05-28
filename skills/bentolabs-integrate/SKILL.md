@@ -1,142 +1,141 @@
 ---
 name: bentolabs-integrate
-description: Use when greenfield-integrating Bento into a Python app with no existing AI observability SDK. Triggers include wiring the Google ADK integration (`bento.instrument()`), manually tracking LLM calls with `bento.track_ai`, registering identity getters at `bento.init`, grouping multi-step agent flows with `bento.begin` trajectories, mapping OpenTelemetry GenAI / OpenInference semantic conventions to Bento dashboard columns, and debugging missing traces or empty dashboard columns. Covers Python SDK install, the `bl_pk_` API key, the four must-pass arguments to `track_ai` (`user_id`, `convo_id`, `model`, `provider`), input/output capture, properties type fidelity, the `flush()` / `shutdown()` lifecycle, and the lower-level OTel transport for apps with an existing TracerProvider. If the project already uses Raindrop or Langfuse, use the `bentolabs-migrate` skill instead.
+description: Use when greenfield-integrating Bento into an app with no existing AI observability SDK. Presents three paths in order of preference — direct export (point an agent SDK's own OpenTelemetry / OpenInference exporter at Bento with no Bento SDK installed; works in any language), the one-line Google ADK auto-instrument (`bentolabs-sdk[adk]` + `bento.instrument()`), and manual per-call `bento.track_ai`. Triggers include "send my LangChain / Pydantic AI / Mastra / Vercel AI SDK traces to Bento", "point my exporter at Bento", wiring the Google ADK integration (`bento.instrument()`), manually tracking LLM calls with `bento.track_ai`, registering identity getters at `bento.init`, grouping multi-step agent flows with `bento.begin` trajectories, mapping OpenTelemetry GenAI / OpenInference semantic conventions to Bento dashboard columns, and debugging missing traces or empty dashboard columns. Covers Python SDK install, the `bl_pk_` API key, the four must-pass arguments to `track_ai` (`user_id`, `convo_id`, `model`, `provider`), input/output capture, properties type fidelity, the `flush()` / `shutdown()` lifecycle, and the lower-level OTel transport for apps with an existing TracerProvider. If the project already uses Raindrop or Langfuse, use the `bentolabs-migrate` skill instead.
 metadata:
-  version: "3.0"
+  version: "3.1"
 ---
 
 # Bento
 
-Bento is production infrastructure for AI agents. The Python SDK emits OpenTelemetry spans with `gen_ai.*` and `openinference.*` semantic conventions. The dashboard turns those spans into traces, signals (English-language failure-mode detectors), alerts, evaluations, and versioned improvements. The TypeScript SDK is in active development and not yet generally available.
+Bento is production infrastructure for AI agents. You send it traces; its dashboard turns them into traces you can read, signals (plain-English failure-mode detectors), alerts, evaluations, and versioned improvements. Under the hood Bento is an OpenTelemetry collector, so it understands standard `gen_ai.*` and `openinference.*` span attributes. The Python SDK is the only generally-available SDK today; the TypeScript SDK is still in development.
 
-Two paths, picked per call site:
+There are three ways to get traces into Bento. They are listed best-first.
 
-- **Integration** (`bento.instrument()`). One line. Captures every model call, tool call, and agent step from **Google ADK**. Default path when ADK is present.
-- **Manual tracking** (`bento.track_ai`). One call per LLM site. Default path for everything else (OpenAI, Anthropic, Bedrock, Vertex, etc.).
+1. **Direct export — no Bento SDK at all.** If the app already uses an agent SDK that has its own OpenTelemetry / OpenInference exporter (LangChain, Pydantic AI, Mastra, the Vercel AI SDK, and others), you just point that exporter at Bento. Nothing to install. This is the best choice when you get to pick the framework, and it works in any language.
+2. **Google ADK auto-instrument — one line.** If the app uses Google ADK, you install `bentolabs-sdk[adk]`, call `bento.instrument()` once at startup, and every model call, tool call, and agent step is captured automatically. No per-call code.
+3. **Manual tracking — one call per LLM site.** For raw LLM SDKs (OpenAI, Anthropic, Bedrock, Vertex) that have no native exporter, you add a `bento.track_ai(...)` call next to each LLM call.
 
-The two compose. Manual `track_ai` and tool spans inside a `bento.begin(...)` block share `trace_id` with any spans the integration captures.
+The two SDK paths (2 and 3) work together: a manual `track_ai` call and the spans ADK captures inside the same `bento.begin(...)` block end up in one trace.
 
-## Integration workflow
+## The plan
 
-Copy this checklist into the response and check items off while integrating:
+Copy this checklist into your reply and tick the boxes as you go.
 
 ```
 Bento integration progress:
-- [ ] Step 1: Discover. Map the codebase (language, framework, LLM SDK, OTel, env config). Whether ADK is in use changes Step 3.
-- [ ] Step 2: Install. Add bentolabs-sdk (plus the [adk] extra if applicable) and set BENTOLABS_API_KEY.
-- [ ] Step 3: Wire it up. Either bento.instrument() once at startup (ADK) OR wrap each LLM call site with bento.track_ai (everything else). Often both.
-- [ ] Step 4: Identify. Register user_id / session_id getters at bento.init(), or thread them through to each call site.
-- [ ] Step 5: Verify. Run the verify snippet, confirm the trace lands in the dashboard.
+- [ ] Step 1: Look at the codebase and figure out which path fits.
+- [ ] Step 2: Get an API key. Install the Bento SDK only if your path needs it.
+- [ ] Step 3: Wire up ONE path: direct export, ADK auto-instrument, or manual track_ai.
+- [ ] Step 4: Make sure each trace carries a user id and a conversation id.
+- [ ] Step 5: Run a real flow, check the dashboard, fix any empty columns.
 ```
 
-Walk these in order. Do not skip Step 1; the discovery output drives every later decision.
+Do these in order. Do not skip Step 1 — what you find there decides everything after it.
 
-## Step 1: Discover the codebase
+## Step 1: Look at the codebase
 
-Run `scripts/discover.sh` from the repo root. It runs grouped grep and `find` commands covering language and Python version, web framework, LLM call sites, Google ADK usage, existing OpenTelemetry setup, env file location, and competing SDKs (Raindrop, Langfuse).
+Run the helper script from the top folder of the project:
 
-Read each section's output. The output drives:
+```bash
+./scripts/discover.sh
+```
 
-- **Step 3 path choice.** ADK present means Path A; otherwise Path B.
-- **Where the API key goes.** Section 1f shows the env file.
-- **Whether to migrate or run alongside.** Section 1g flags Raindrop or Langfuse usage.
+It only reads files. It prints labelled sections: the language and Python version, the web framework, every LLM call site, any agent framework that might have a native exporter (section 1c2), Google ADK usage (section 1d), existing OpenTelemetry setup, where env vars live (section 1f), and any competing SDK like Raindrop or Langfuse (section 1g).
 
-If a Python project isn't detected (no `pyproject.toml` / `setup.py` / `requirements.txt`, no `*.py` files), stop. Point the user at `https://docs.bentolabs.ai/typescript` and explain that the TS SDK is not yet GA.
+Read every section. Three things in the output decide what you do next:
 
-### Existing competing SDK
+- **Which path to use in Step 3.** If section 1c2 found an agent SDK with a native exporter, lean toward direct export. If section 1d found Google ADK, the ADK auto-instrument path fits. Otherwise it's manual `track_ai`.
+- **Where to put the API key.** Section 1f shows the env file.
+- **Whether there's already a tracing SDK.** Section 1g flags Raindrop or Langfuse — handle that next.
 
-If section 1g finds Raindrop or Langfuse usage, **ask the user before proceeding**:
+If this is not a Python project, the Bento SDK paths (ADK and manual) do not apply, because the Python SDK is the only GA one today. But **direct export still works from any language**, because it installs no Bento SDK — it only changes where an exporter you already have sends its traces. So if the app uses an agent SDK with a native exporter, go straight to `references/PATH-DIRECT-EXPORT.md`. Otherwise point the user at `https://docs.bentolabs.ai/typescript` for SDK status.
 
-> I found existing **`<Raindrop|Langfuse>`** usage at `<file:line>` (and N more sites). Do you want me to:
->
-> 1. **Migrate** the existing code from `<Raindrop|Langfuse>` to Bento (port every call site, then remove the old SDK)
-> 2. **Fresh integration**. Keep `<Raindrop|Langfuse>` in place and add Bento alongside it (for A/B testing or instrumenting only new code)
->
-> Which one?
+### If Raindrop or Langfuse is already installed
 
-If they pick **migrate**, stop here and switch to the `bentolabs-migrate` skill. It covers the source-specific translation guides (Raindrop and Langfuse), the OpenInference instrumentor setup, and the safe coexistence-then-uninstall workflow. Do not try to migrate from this skill.
+If section 1g found Raindrop or Langfuse, this might be a migration, not a greenfield install. Do not guess — ask the user which they want:
 
-If they pick **fresh integration**, continue with the greenfield Step 3 patterns below. Note in your summary that the project also runs `<Raindrop|Langfuse>` so the reviewer knows two SDKs will emit spans.
+- **Migrate** off the old SDK to Bento. If they pick this, stop here and switch to the `bentolabs-migrate` skill. That skill owns the rename guides, the instrumentor setup, and the safe "keep both running until verified" workflow. Do not try to migrate from this skill.
+- **Keep the old SDK** and add Bento next to it (for an A/B comparison, or to instrument only new code). If they pick this, continue with Step 3 below, and mention in your summary that two SDKs will be sending spans.
 
-Never silently pick one path.
+### Summarize what you found before editing anything
 
-### Summarize before continuing
+Write a short summary back to the user: the language and Python version, the web framework, whether ADK is in use, the list of LLM call sites (with file and line and provider), whether OpenTelemetry is already set up, where the env vars live, and whether Raindrop or Langfuse is present (and which path the user picked). Confirm with them before you start editing.
 
-Write a short summary back to the user with: language and Python version, framework, **whether ADK is in use**, the list of LLM call sites with file:line and provider, whether OTel is already wired, where env vars live, **whether Raindrop or Langfuse is present and which path the user picked**. Confirm before editing.
+## Step 2: Get an API key (and install only if you need to)
 
-## Step 2: Install and authenticate
+Get a key from `https://platform.bentolabs.ai`. It starts with `bl_pk_`. The SDK checks the prefix immediately and raises `BentoAuthError("invalid_api_key_format")` on a bad key before it makes any network call.
 
-Run `scripts/install.sh`. It picks the package manager (uv, poetry, pdm, or pip), installs `bentolabs-sdk` (with the `[adk]` extra if you set `ADK_PRESENT=1`), and adds a `BENTOLABS_API_KEY` placeholder to `.env`.
+Whether you install the Bento SDK depends on your path:
 
-Keys come from `https://platform.bentolabs.ai`. The prefix is `bl_pk_` and the SDK validates it up front. A bad key raises `BentoAuthError("invalid_api_key_format")` before any network I/O.
+- **Direct export installs nothing from Bento.** You only need the key in the environment (`BENTOLABS_API_KEY`) and, if you're not using the default `https://api.bentolabs.ai`, `BENTOLABS_BASE_URL`.
+- **ADK and manual need the SDK.** Run `./scripts/install.sh`. It picks the package manager the project already uses (uv, poetry, pdm, or pip), installs `bentolabs-sdk`, and adds a `BENTOLABS_API_KEY` placeholder to `.env`. For ADK, set `ADK_PRESENT=1` first so it adds the `[adk]` extra.
 
-`bento.init()` is optional in the pure `track_ai` flow. The first call lazy-initializes from `BENTOLABS_API_KEY` and `BENTOLABS_BASE_URL` (defaults to `https://api.bentolabs.ai`). For an integration, call `bento.init()` explicitly at startup so identity getters are registered before the first captured span.
+A note on `bento.init()`: in the plain `track_ai` flow it's optional — the first `track_ai` call sets itself up from the env vars. But for the ADK path, call `bento.init()` yourself at startup, so your identity getters (Step 4) are registered before the first span is captured.
 
-## Step 3: Instrument
+## Step 3: Wire up ONE path
 
-Pick the path that matches what Step 1d found.
+Pick the first path that fits what Step 1 found, and follow its reference file.
 
-- **Path A — integration.** ADK in use. Three lines at startup, zero per-call-site code. Read `references/PATH-A-ADK.md`.
-- **Path B — manual `track_ai`.** Everything else, or any uncovered SDK in a project that also uses ADK. One call per LLM site. Read `references/PATH-B-MANUAL.md`.
+1. **Direct export.** Use this if section 1c2 found an agent SDK with a native exporter (LangChain, Pydantic AI, Mastra, Vercel AI SDK, and others). You point that exporter at Bento and install nothing. Open `references/PATH-DIRECT-EXPORT.md`, find your SDK in the table, and copy its snippet.
+2. **ADK auto-instrument.** Use this if section 1d found Google ADK. It's three lines at startup and zero per-call code. Open `references/PATH-A-ADK.md`.
+3. **Manual `track_ai`.** Use this for raw LLM SDKs with no native exporter, or for any call site the first two paths don't cover. You add one `track_ai` call per LLM call. Open `references/PATH-B-MANUAL.md`.
 
-The two paths compose. Open a `bento.begin(...)` trajectory and any spans the integration captures inside it share `trace_id` with your manual `track_ai` and `tool_span` calls.
+You can combine the ADK and manual paths in one app. When you open a `bento.begin(...)` trajectory, the spans ADK captures inside it and your own `track_ai` and `tool_span` calls all end up in the same trace.
 
-## Step 4: Source `user_id` and `convo_id`
+## Step 4: Make sure each trace has a user id and a conversation id
 
-These two identifiers unlock the dashboard's user filter and conversation timeline. Read `references/IDENTITY.md`. Pick one of two patterns and apply consistently:
+Two ids unlock the most useful dashboard features: `user_id` (the user filter) and `convo_id` (the conversation timeline). Make sure every trace carries them.
 
-- **Pattern 1: init-time getters.** Preferred for Path A; also works for Path B.
-- **Pattern 2: per-call kwargs.** Path B only.
+- **ADK and manual paths:** read `references/IDENTITY.md`. There are two ways to supply the ids. The first is to register getter functions once at `bento.init(...)` — preferred for the ADK path, and it works for the manual path too. The second is to pass the ids as keyword arguments on each `track_ai` call — manual path only. Pick one and use it consistently. The same reference also covers setting the ids late, after a trace has already started (`bento.update_current_trace` and `bento.propagate_attributes`).
+- **Direct-export path:** there is no Bento SDK, so you don't use `bento.init` getters. Instead the ids are two plain span attributes — `gen_ai.user.id` and `gen_ai.conversation.id` — that you set through your own framework. `references/PATH-DIRECT-EXPORT.md` explains where.
 
-Late-binding identity (`bento.update_current_trace` and `bento.propagate_attributes`) is covered in the same reference.
+## Step 5: Check it works
 
-## Step 5: Verify
+First, run the smoke test for your path:
 
-Run the smoke test that matches the Step 3 path you took.
+- **Manual path:** `python scripts/verify-manual.py`. It sends a `hello_world` event and flushes; a row should appear in the dashboard within seconds.
+- **ADK path:** `python scripts/verify-integration.py`. It prints `activated: 'adk'` when the integration is on. Then run one real ADK agent call and confirm a span shows up.
+- **Direct-export path:** there's no script and no Bento worker to check — just run one real flow and look at the dashboard (the loop below).
 
-- **Manual path**: `scripts/verify-manual.py`. Sends a `hello_world` event, flushes, and a row should appear in the dashboard within seconds.
-- **Integration path**: `scripts/verify-integration.py`. Prints `activated: 'adk'` on success. Then invoke one real ADK agent run and confirm a span lands.
+If you're on an SDK path and want to confirm the background worker that ships spans is running, run `python scripts/check-worker.py`. The thread list it prints should include `OtelBatchSpanRecordProcessor`. If it doesn't, `init()` failed quietly or your code called the SDK before `init()` finished — re-check Step 2.
 
-To confirm the SDK's background worker is alive, run `scripts/check-worker.py`. The thread list should include `OtelBatchSpanRecordProcessor`. If it doesn't, `init()` failed silently or SDK calls are happening before init resolved; re-check Step 2.
+### Then check every call site
 
-### Validation loop
+For each place you instrumented in Step 3:
 
-For every call site instrumented in Step 3:
-
-1. Run the user flow once that exercises that call site.
+1. Run the user flow once so that call site actually fires.
 2. Open `https://platform.bentolabs.ai` and find the new row.
-3. Check six columns: `provider`, `model`, `input`, `output`, `user_id`, `convo_id`. All non-empty.
-4. If any column is empty, return to Step 3 for that call site. Fix the wrap and re-run.
-5. Repeat from step 1 until every column is filled.
+3. Check all six columns are filled: `provider`, `model`, `input`, `output`, `user_id`, `convo_id`.
+4. If any column is empty, go back to Step 3 for that call site, fix it, and run again.
+5. Repeat until every column is filled.
 
-If `user_id` or `convo_id` is empty on integration-captured spans, the init-time getter returned `None`. Walk `references/TROUBLESHOOTING.md` for the diagnostic checklist. Do not move on to other work until validation passes for every site.
+If `user_id` or `convo_id` is empty on ADK-captured spans, your init-time getter returned `None`. Walk the checklist in `references/TROUBLESHOOTING.md`. Don't move on to other work until every site passes.
 
-## Gotchas
+## Things that are easy to get wrong
 
-Concrete corrections the agent will get wrong without being told. Read these before writing instrumentation.
+Read these before you write any instrumentation. They are the mistakes that happen most often.
 
-- **`provider` is not auto-inferred from the model name.** Skip it and the provider filter and grouping break. Pass `provider="openai"` / `"anthropic"` / `"aws_bedrock"` / `"google"` etc. explicitly on every `track_ai` call.
-- **A Bedrock model id like `anthropic.claude-3-sonnet-20240229-v1:0` needs `provider="aws_bedrock"`, NOT `"anthropic"`.** The model id is ambiguous on purpose.
-- **`convo_id` must be the same string across every turn of one conversation.** Minting a fresh UUID per request fragments the conversation timeline into N independent rows. The common bug is generating it inside the request handler instead of pulling it from the path param.
-- **`track_ai` uses `convo_id`. Everywhere else uses `session_id`.** `bento.init`, `bento.begin`, `bento.update_current_trace`, `bento.propagate_attributes` all take `session_id=`. Same value, different kwarg name. This is the single biggest naming footgun, especially when migrating from Langfuse.
-- **Call `bento.init()` and `bento.instrument()` ONCE at startup, not per request.** They are idempotent, but a partial `init()` per request churns identity registration.
-- **Threads and `concurrent.futures` workers do NOT inherit the trajectory `ContextVar`.** Wrap submit calls with `contextvars.copy_context().run(...)` to inherit. `asyncio` tasks inherit automatically.
-- **Short scripts, notebooks, Lambdas, and `os._exit` drop the last batch.** Call `bento.flush()` before exit. Long-running services flush via `atexit` on clean exit; hard kills bypass `atexit`.
-- **`bento.instrument()` returning `None` means the `[adk]` extra is not installed in the active venv.** It does NOT raise. Re-run `pip install "bentolabs-sdk[adk]"` in the same venv and confirm with `pip show bentolabs-sdk`.
-- **`properties=` keep their type for primitives and homogeneous lists.** Dicts and mixed lists fall back to JSON strings. Do NOT put `gen_ai.*`, `input.value`, or `output.value` keys inside `properties` — the SDK-managed kwargs overwrite them.
-- **`bento.track_ai` and `bento.begin` detach from any outer OTel context on purpose.** Do not "fix" this by reattaching. The ingest mapper depends on the detachment.
+- **You must pass `provider=` yourself.** Bento does not guess it from the model name, and if you skip it the provider filter and grouping break. Always pass it: `provider="openai"`, `"anthropic"`, `"aws_bedrock"`, `"google"`, and so on.
+- **A Bedrock model needs `provider="aws_bedrock"`, even when the model id starts with `anthropic.`** For example `anthropic.claude-3-sonnet-20240229-v1:0` is `provider="aws_bedrock"`. The model id is intentionally ambiguous.
+- **`convo_id` must be the same string for every turn of one conversation.** If you mint a new UUID per request, each turn becomes its own row and the conversation timeline falls apart. The usual bug is generating the id inside the request handler instead of reading it from the path/route.
+- **`track_ai` and `begin` use `convo_id=`. `init`, `update_current_trace`, and `propagate_attributes` use `session_id=`.** Same value, different keyword name depending on the function — the single most common naming mistake. Passing `session_id=` to `begin` doesn't get ignored; it raises a `TypeError`.
+- **Call `bento.init()` and `bento.instrument()` once at startup, never per request.** They're safe to call twice, but running a partial `init()` on every request churns the identity registration.
+- **Background threads don't inherit the open trajectory.** Threads and `concurrent.futures` workers do not carry the trajectory `ContextVar`. Wrap the work you submit with `contextvars.copy_context().run(...)` so it inherits. `asyncio` tasks inherit on their own.
+- **Short-lived programs can lose the last batch.** Scripts, notebooks, Lambdas, and anything that calls `os._exit` may exit before the last batch ships. Call `bento.flush()` before you exit. Long-running services flush automatically on a clean shutdown, but a hard kill skips that.
+- **`bento.instrument()` returning `None` means the `[adk]` extra isn't installed in the active virtualenv.** It does not raise — it just returns `None`. Re-run `pip install "bentolabs-sdk[adk]"` in the same venv and confirm with `pip show bentolabs-sdk`.
+- **`track_ai` and `begin` detach from the surrounding OpenTelemetry context on purpose.** Don't "fix" this by reattaching them — the part of Bento that reads the spans depends on the detachment.
+
+Lower-frequency footguns (such as how `properties=` values keep or lose their type) live in `references/REFERENCE.md` and `references/TROUBLESHOOTING.md`. Read those before writing instrumentation.
 
 ## Reference
+
+For the direct-export path (per-SDK support matrix and config), read `references/PATH-DIRECT-EXPORT.md`.
 
 For deep reference (public surface, the four kwargs that must be on every call, trajectories, properties, lifecycle, the lower-level OTel transport for apps with an existing `TracerProvider`), read `references/REFERENCE.md`.
 
 For diagnostics when traces don't appear or columns are empty, read `references/TROUBLESHOOTING.md`.
 
 For deeper docs hosted at `docs.bentolabs.ai` as plain Markdown, see the URL list in `references/DOCS-INDEX.md`.
-
-## TypeScript
-
-The TypeScript SDK is in active development and not yet generally available. Do not generate Node or browser instrumentation code from this skill. Point users at `https://docs.bentolabs.ai/typescript` for status.
 
 ## Related
 
