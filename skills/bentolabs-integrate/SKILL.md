@@ -1,6 +1,6 @@
 ---
 name: bentolabs-integrate
-description: Use when greenfield-integrating Bento into an app with no existing AI observability SDK. Presents three paths in order of preference — direct export (point an agent SDK's own OpenTelemetry / OpenInference exporter at Bento with no Bento SDK installed; works in any language), the one-line Google ADK auto-instrument (`bentolabs-sdk[adk]` + `bento.instrument()`), and manual per-call `bento.track_ai`. Triggers include "send my LangChain / Pydantic AI / Mastra / Vercel AI SDK traces to Bento", "point my exporter at Bento", wiring the Google ADK integration (`bento.instrument()`), manually tracking LLM calls with `bento.track_ai`, registering identity getters at `bento.init`, grouping multi-step agent flows with `bento.begin` trajectories, mapping OpenTelemetry GenAI / OpenInference semantic conventions to Bento dashboard columns, and debugging missing traces or empty dashboard columns. Covers Python SDK install, the `bl_pk_` API key, the four must-pass arguments to `track_ai` (`user_id`, `convo_id`, `model`, `provider`), input/output capture, properties type fidelity, the `flush()` / `shutdown()` lifecycle, and the lower-level OTel transport for apps with an existing TracerProvider. If the project already uses Raindrop or Langfuse, use the `bentolabs-migrate` skill instead.
+description: Use when greenfield-integrating Bento into an app with no existing AI observability SDK. Presents three paths in order of preference — direct export (point a framework's own OpenTelemetry exporter at Bento; no Bento SDK in TypeScript, while Python frameworks attach the Bento JSON span processor), the one-line Google ADK auto-instrument (`bentolabs-sdk[adk]` + `bento.instrument()`), and manual per-call `bento.track_ai`. Triggers include "send my LangChain / Pydantic AI / Mastra / Vercel AI SDK traces to Bento", "point my exporter at Bento", wiring the Google ADK integration (`bento.instrument()`), manually tracking LLM calls with `bento.track_ai`, registering identity getters at `bento.init`, grouping multi-step agent flows with `bento.begin` trajectories, mapping OpenTelemetry GenAI / OpenInference semantic conventions to Bento dashboard columns, and debugging missing traces or empty dashboard columns. Covers Python SDK install, the `bl_pk_` API key, the four must-pass arguments to `track_ai` (`user_id`, `convo_id`, `model`, `provider`), input/output capture, properties type fidelity, the `flush()` / `shutdown()` lifecycle, and the lower-level OTel transport for apps with an existing TracerProvider. If the project already uses Raindrop or Langfuse, use the `bentolabs-migrate` skill instead.
 metadata:
   version: "3.1"
 ---
@@ -11,7 +11,7 @@ Bento is production infrastructure for AI agents. You send it traces; its dashbo
 
 There are three ways to get traces into Bento. They are listed best-first.
 
-1. **Direct export — no Bento SDK at all.** If the app already uses an agent SDK that has its own OpenTelemetry / OpenInference exporter (LangChain, Pydantic AI, Mastra, the Vercel AI SDK, and others), you just point that exporter at Bento. Nothing to install. This is the best choice when you get to pick the framework, and it works in any language.
+1. **Direct export — point a framework's own exporter at Bento.** If the app already uses a framework with its own OpenTelemetry exporter, you send its traces to Bento by setting an endpoint and a `Bearer` header. One catch: Bento accepts **JSON only** (not protobuf yet). In **TypeScript** that's easy and needs no Bento package (Vercel AI SDK, Mastra). In **Python**, stock exporters send protobuf, so you attach the Bento JSON span processor plus an OpenInference instrumentor (LangChain, LlamaIndex, Pydantic AI). This is the best choice when you control the framework.
 2. **Google ADK auto-instrument — one line.** If the app uses Google ADK, you install `bentolabs-sdk[adk]`, call `bento.instrument()` once at startup, and every model call, tool call, and agent step is captured automatically. No per-call code.
 3. **Manual tracking — one call per LLM site.** For raw LLM SDKs (OpenAI, Anthropic, Bedrock, Vertex) that have no native exporter, you add a `bento.track_ai(...)` call next to each LLM call.
 
@@ -48,7 +48,7 @@ Read every section. Three things in the output decide what you do next:
 - **Where to put the API key.** Section 1f shows the env file.
 - **Whether there's already a tracing SDK.** Section 1g flags Raindrop or Langfuse — handle that next.
 
-If this is not a Python project, the Bento SDK paths (ADK and manual) do not apply, because the Python SDK is the only GA one today. But **direct export still works from any language**, because it installs no Bento SDK — it only changes where an exporter you already have sends its traces. So if the app uses an agent SDK with a native exporter, go straight to `references/PATH-DIRECT-EXPORT.md`. Otherwise point the user at `https://docs.bentolabs.ai/typescript` for SDK status.
+If this is not a Python project, the Bento SDK paths (ADK and manual) do not apply, because the Python SDK is the only GA one today. But **TypeScript apps can use direct export today with no Bento SDK** — you point the framework's own JSON exporter at Bento. So if the app uses a framework with a native exporter (Vercel AI SDK, Mastra), go straight to `references/PATH-DIRECT-EXPORT.md`. Otherwise point the user at `https://docs.bentolabs.ai/typescript` for SDK status.
 
 ### If Raindrop or Langfuse is already installed
 
@@ -67,7 +67,7 @@ Get a key from `https://platform.bentolabs.ai`. It starts with `bl_pk_`. The SDK
 
 Whether you install the Bento SDK depends on your path:
 
-- **Direct export installs nothing from Bento.** You only need the key in the environment (`BENTOLABS_API_KEY`) and, if you're not using the default `https://api.bentolabs.ai`, `BENTOLABS_BASE_URL`.
+- **Direct export installs nothing from Bento in TypeScript.** You only need the key in the environment (`BENTOLABS_API_KEY`) and, if you're not using the default `https://api.bentolabs.ai`, `BENTOLABS_BASE_URL`. (Python direct export attaches the Bento span processor, so it does need the SDK — install it as below.)
 - **ADK and manual need the SDK.** Run `./scripts/install.sh`. It picks the package manager the project already uses (uv, poetry, pdm, or pip), installs `bentolabs-sdk`, and adds a `BENTOLABS_API_KEY` placeholder to `.env`. For ADK, set `ADK_PRESENT=1` first so it adds the `[adk]` extra.
 
 A note on `bento.init()`: in the plain `track_ai` flow it's optional — the first `track_ai` call sets itself up from the env vars. But for the ADK path, call `bento.init()` yourself at startup, so your identity getters (Step 4) are registered before the first span is captured.
@@ -76,7 +76,7 @@ A note on `bento.init()`: in the plain `track_ai` flow it's optional — the fir
 
 Pick the first path that fits what Step 1 found, and follow its reference file.
 
-1. **Direct export.** Use this if section 1c2 found an agent SDK with a native exporter (LangChain, Pydantic AI, Mastra, Vercel AI SDK, and others). You point that exporter at Bento and install nothing. Open `references/PATH-DIRECT-EXPORT.md`, find your SDK in the table, and copy its snippet.
+1. **Direct export.** Use this if section 1c2 found a framework with a native OpenTelemetry exporter (LangChain, Pydantic AI, Mastra, Vercel AI SDK, and others). You point that exporter at Bento. In TypeScript this needs no Bento package; in Python you attach the Bento JSON span processor (Bento accepts JSON only). Open `references/PATH-DIRECT-EXPORT.md`, find your framework in the table, and copy its snippet.
 2. **ADK auto-instrument.** Use this if section 1d found Google ADK. It's three lines at startup and zero per-call code. Open `references/PATH-A-ADK.md`.
 3. **Manual `track_ai`.** Use this for raw LLM SDKs with no native exporter, or for any call site the first two paths don't cover. You add one `track_ai` call per LLM call. Open `references/PATH-B-MANUAL.md`.
 
@@ -87,7 +87,7 @@ You can combine the ADK and manual paths in one app. When you open a `bento.begi
 Two ids unlock the most useful dashboard features: `user_id` (the user filter) and `convo_id` (the conversation timeline). Make sure every trace carries them.
 
 - **ADK and manual paths:** read `references/IDENTITY.md`. There are two ways to supply the ids. The first is to register getter functions once at `bento.init(...)` — preferred for the ADK path, and it works for the manual path too. The second is to pass the ids as keyword arguments on each `track_ai` call — manual path only. Pick one and use it consistently. The same reference also covers setting the ids late, after a trace has already started (`bento.update_current_trace` and `bento.propagate_attributes`).
-- **Direct-export path:** there is no Bento SDK, so you don't use `bento.init` getters. Instead the ids are two plain span attributes — `gen_ai.user.id` and `gen_ai.conversation.id` — that you set through your own framework. `references/PATH-DIRECT-EXPORT.md` explains where.
+- **Direct-export path (TypeScript):** there is no Bento SDK, so you don't use `bento.init` getters. Instead the ids are two plain span attributes — `gen_ai.user.id` and `gen_ai.conversation.id` — that you set through your own framework. `references/PATH-DIRECT-EXPORT.md` explains where. (Python direct export uses the Bento span processor, so you can register `bento.init` getters as above.)
 
 ## Step 5: Check it works
 

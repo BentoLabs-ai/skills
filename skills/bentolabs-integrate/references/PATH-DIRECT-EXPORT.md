@@ -1,87 +1,102 @@
-# Direct export: no Bento SDK
+# Direct export
 
-The simplest greenfield path. Bento is an OpenTelemetry collector, so if
-the app already builds on an agent SDK that ships its own OTel /
-OpenInference exporter, you point that exporter at Bento and install no
-Bento SDK at all. The technical name is **direct OTLP export to an
-OTLP-compatible backend**.
+The idea: Bento is an OpenTelemetry collector. If the app is built on a framework that already has its own OpenTelemetry exporter, you point that exporter at Bento. The two settings every such exporter needs are:
 
-Prefer this when you control the framework choice — picking an SDK that
-emits standard OpenTelemetry spans means Bento (and any other OTel
-backend) reads them with zero per-call-site code.
+1. **Endpoint** — `${BENTOLABS_BASE_URL}/v1/traces` (base URL defaults to `https://api.bentolabs.ai`).
+2. **Auth header** — `Authorization: Bearer ${BENTOLABS_API_KEY}` (the key starts with `bl_pk_`).
 
-Every such exporter needs exactly two settings:
+## The one rule that decides everything: Bento needs JSON
 
-1. **Endpoint** — `${BENTOLABS_BASE_URL}/v1/traces` (base URL defaults to
-   `https://api.bentolabs.ai`).
-2. **Auth header** — `Authorization: Bearer ${BENTOLABS_API_KEY}` (the key
-   starts with `bl_pk_`).
+Bento's ingest accepts **OTLP/HTTP with a JSON payload only** (gzip is fine). It does **not** accept protobuf yet — a protobuf request comes back as `415 Unsupported Media Type`. So the exporter must be configured for `http/json`.
 
-Bento accepts OTLP/HTTP in both protobuf and JSON and reads both
-`gen_ai.*` and `openinference.*` attributes, so any standard OTLP exporter
-works. The only thing to confirm per SDK is that it can send a `Bearer`
-header and emits one of those attribute sets.
+This splits the path by language:
 
-## Which SDKs support this
+- **TypeScript / JavaScript** — direct export works with **no Bento SDK**, because JS OpenTelemetry exporters can emit JSON. This is the real "install nothing" path.
+- **Python** — there is **no no-SDK path today**, because the stock Python OpenTelemetry exporters only emit protobuf, which Bento rejects. Python frameworks instead use the Bento SDK's JSON span processor (`BentoLabsSpanProcessor`) plus an OpenInference instrumentor. (The Bento SDK ships its own JSON exporter precisely because stock Python OTel can't emit JSON.)
 
-| SDK | Direct export? | How | If it can't |
-|---|---|---|---|
-| **LangChain / LangGraph** | Yes | `langsmith[otel]`: `LANGSMITH_OTEL_ENABLED=true` + OTLP env vars | `openinference-instrumentation-langchain` |
-| **Pydantic AI** | Yes | `Agent.instrument_all()` + a standard OTLP exporter | `openinference-instrumentation-pydantic-ai` |
-| **Mastra** (TS) | Yes | `ArizeExporter({ endpoint, apiKey })` (leave `spaceId` unset) | `@arizeai/openinference-mastra` |
-| **Vercel AI SDK** (TS) | Yes | `@vercel/otel` OTLP exporter + `experimental_telemetry` per call | `@arizeai/openinference-vercel` for prompt/response text |
-| **LlamaIndex** | Transport only | needs its OpenInference instrumentor to emit readable attributes | `openinference-instrumentation-llama-index` |
-| **OpenAI Agents SDK** | No | its built-in tracing is OpenAI-proprietary, not OTLP | Python: `openinference-instrumentation-openai-agents`; JS: manual |
-| **CrewAI** | No | built-in telemetry is anonymous usage analytics | `openinference-instrumentation-crewai` |
+Bento reads `gen_ai.*` and `openinference.*` attributes, so the dashboard columns fill from whichever of those your framework emits.
 
-## Example: any OpenTelemetry / OpenInference SDK (Python)
+## TypeScript — no Bento SDK
+
+### Vercel AI SDK
+
+Use `@vercel/otel`'s `OTLPHttpJsonTraceExporter` (it sends JSON):
+
+```ts
+// instrumentation.ts
+import { registerOTel, OTLPHttpJsonTraceExporter } from "@vercel/otel";
+
+export function register() {
+  registerOTel({
+    serviceName: "my-app",
+    traceExporter: new OTLPHttpJsonTraceExporter({
+      url: `${process.env.BENTOLABS_BASE_URL ?? "https://api.bentolabs.ai"}/v1/traces`,
+      headers: { Authorization: `Bearer ${process.env.BENTOLABS_API_KEY}` },
+    }),
+  });
+}
+```
+
+Then set `experimental_telemetry: { isEnabled: true }` on each `generateText` / `streamText` call. The AI SDK emits `gen_ai.*` (model, tokens). Prompt/response text lives under `ai.*`; add `@arizeai/openinference-vercel` to fill the input/output columns.
+
+### Mastra
+
+Use Mastra's `OtelExporter` with `protocol: "http/json"`:
+
+```ts
+import { OtelExporter } from "@mastra/otel-exporter";
+
+new OtelExporter({
+  provider: {
+    custom: {
+      endpoint: `${process.env.BENTOLABS_BASE_URL ?? "https://api.bentolabs.ai"}/v1/traces`,
+      protocol: "http/json",
+      headers: { Authorization: `Bearer ${process.env.BENTOLABS_API_KEY}` },
+    },
+  },
+});
+```
+
+**Caveat on `ArizeExporter`.** Mastra's `ArizeExporter` preset maps to OpenInference, but it may send protobuf (which Bento rejects) and it switches to Arize's own headers if `ARIZE_SPACE_ID` is set. Prefer the `OtelExporter` with `protocol: "http/json"` above, and verify the columns fill afterward.
+
+## Python — with the Bento span processor
+
+Because Bento needs JSON and stock Python OTel exporters send protobuf, Python frameworks attach the Bento SDK's JSON span processor plus an OpenInference instrumentor. Call sites stay untouched.
+
+```bash
+pip install bentolabs-sdk openinference-instrumentation-langchain
+```
 
 ```python
-import os
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from openinference.instrumentation.langchain import LangChainInstrumentor
 
-base = os.environ.get("BENTOLABS_BASE_URL", "https://api.bentolabs.ai")
-exporter = OTLPSpanExporter(
-    endpoint=f"{base}/v1/traces",
-    headers={"Authorization": f"Bearer {os.environ['BENTOLABS_API_KEY']}"},
-)
+from bentolabs_sdk import BentoLabsSpanProcessor  # sends JSON to Bento
+
 provider = TracerProvider()
-provider.add_span_processor(BatchSpanProcessor(exporter))
+provider.add_span_processor(BentoLabsSpanProcessor())
 trace.set_tracer_provider(provider)
 
-# Then turn on your SDK's instrumentation, e.g.:
-#   from pydantic_ai.agent import Agent;  Agent.instrument_all()
+LangChainInstrumentor().instrument(tracer_provider=provider)
 ```
 
-The same two settings can come from environment variables, with no code:
+Swap the instrumentor for your framework — `openinference-instrumentation-llama-index`, `-openai-agents`, `-crewai`, `-anthropic`, etc. This applies even to frameworks that emit OpenTelemetry natively (e.g. Pydantic AI's `Agent.instrument_all()`): they still need a JSON exporter, so attach `BentoLabsSpanProcessor`. See `references/REFERENCE.md` for the processor details.
 
-```
-OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://api.bentolabs.ai/v1/traces
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer bl_pk_...
-```
+## Which framework, which path
 
-## TypeScript / JavaScript
+| Framework | Language | How |
+|---|---|---|
+| Vercel AI SDK | TS | `@vercel/otel` `OTLPHttpJsonTraceExporter` — no Bento SDK |
+| Mastra | TS | `OtelExporter` with `protocol: "http/json"` — no Bento SDK |
+| LangChain / LangGraph | Python | OpenInference instrumentor + `BentoLabsSpanProcessor` |
+| LlamaIndex | Python | OpenInference instrumentor + `BentoLabsSpanProcessor` |
+| Pydantic AI | Python | `Agent.instrument_all()` + `BentoLabsSpanProcessor` |
+| OpenAI Agents SDK | Python | OpenInference instrumentor + `BentoLabsSpanProcessor` (built-in tracing is not OTLP) |
+| CrewAI | Python | OpenInference instrumentor + `BentoLabsSpanProcessor` |
 
-Direct export installs no Bento SDK, so it works from any language — the
-"Bento TypeScript SDK is not GA" caveat does **not** apply here. Mastra and
-the Vercel AI SDK are the common TS cases; see the Mastra example in the
-`bentolabs-migrate` skill's `references/NATIVE-EXPORT.md`.
+## Verify the six columns
 
-## Then verify the same six columns
+Traces arriving is not the same as the dashboard filling in. After wiring it up, run one real flow and confirm `provider`, `model`, `input`, `output`, `user_id`, `convo_id` are all populated. If `input` / `output` are empty, the framework emits metadata but not content — add its OpenInference instrumentor (Python) or `@arizeai/openinference-vercel` (Vercel).
 
-Traces arriving is not the same as the dashboard filling in. After wiring
-the exporter, run one real flow and confirm `provider`, `model`, `input`,
-`output`, `user_id`, `convo_id` are all populated (Step 5). If `input` /
-`output` are empty, the SDK emits metadata but not content — add its
-OpenInference instrumentor (the "If it can't" column) on the same exporter.
-
-Identity (`user_id` / `convo_id` columns) comes from two plain span
-attributes — `gen_ai.user.id` and `gen_ai.conversation.id`. On this path
-there is no Bento SDK, so set them through your own framework, not
-`bento.init` getters: most agent SDKs let you attach attributes or
-metadata to a run, and a span processor or the OTLP resource attributes
-can stamp them on every span. The full attribute → column table is at
-`https://docs.bentolabs.ai/python/otel-transport.md`.
+Identity (`user_id` / `convo_id`) comes from the `gen_ai.user.id` and `gen_ai.conversation.id` span attributes. With no Bento SDK (TypeScript), set them through your framework — a run attribute, a span processor, or OTLP resource attributes.
