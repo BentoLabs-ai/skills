@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # Show the 5 most recent traces as a readable table.
-bentolabs traces list --limit 5 --output table
+bentolabs traces list --limit 5
 
 # Get raw JSON and pull just the trace IDs out of it with jq.
 # (--output raw gives you the unformatted JSON to pipe around.)
@@ -23,7 +23,25 @@ bentolabs traces list --output raw \
 bentolabs refresh
 
 # Call any API path directly when no built-in command fits. For "raw" you
-# must fill in the workspace_id yourself in the path.
+# must fill in the workspace_id yourself in the path (no /v1 prefix).
 bentolabs raw GET /health
-# bentolabs raw GET /v1/workspaces/<ws-id>/traces
-# bentolabs raw POST /v1/workspaces/<ws-id>/things --data '{"x":1}'
+# bentolabs raw GET /workspaces/<ws-id>/traces
+# bentolabs raw POST /workspaces/<ws-id>/issues --data '{"title":"..."}'
+
+# More ways to find the right command:
+#   bentolabs --help                      # list groups
+#   bentolabs <group> --help              # commands in a group
+#   bentolabs <group> <command> --help    # one command's exact arguments
+# The bundled ../commands.yaml is a routing map of every group/command.
+
+# Aggregate views (analytics group needs --start and --end):
+# bentolabs analytics trace-summary --start 2026-05-01 --end 2026-05-29
+
+# Inspect one analyzed run and its findings (trajectories group).
+# NOTE: boolean flags are --flag / --no-flag, never --flag true.
+# bentolabs trajectories list --has-errors
+# bentolabs trajectories list --is-suspicious
+# bentolabs trajectories list-findings <trajectory-id>
+
+# Workspace is a QUERY flag (--workspace-id) on these, not the injected --workspace:
+# bentolabs incidents list --workspace-id <ws-id>

@@ -1,0 +1,5 @@
+# Local-only generators for bentolabs-cli. They regenerate commands.yaml and
+# references/*.md from the live API; the agent never runs them, so they stay
+# out of the published skill.
+skills/bentolabs-cli/scripts/generate-commands-yaml.py
+skills/bentolabs-cli/scripts/generate-references.py

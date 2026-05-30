@@ -1,0 +1,194 @@
+# commands.yaml -- Bento CLI command surface (routing map + snapshot)
+#
+# SNAPSHOT generated 2026-05-29 by scripts/generate-commands-yaml.py from https://api.bentolabs.ai.
+# 82 operations across 17 groups.
+#
+# This is a ROUTING MAP, not the live truth. The CLI generates its commands
+# from the live API and auto-refreshes the first time you run a non-built-in
+# command, so the authoritative, always-current signature is:
+#     bentolabs <group> <command> --help
+# If a command is missing here, run `bentolabs refresh`, then regenerate this
+# file. Use this map to pick WHICH command; use --help to confirm exact args.
+#
+# Only the `groups:` mapping below is live YAML. The reference notes that
+# follow are comments (the structured part is the command list).
+#
+# INVOCATION:  bentolabs <group> <command> [POSITIONALS] [--flags]
+#
+# FIELD LEGEND (per command):
+#   m     HTTP method (informational; you never type it).
+#   path  API path; "{ws}" = the workspace, never typed positionally.
+#   pos   required positional args, in order (path params, always strings).
+#   ws    true => targets a workspace via the INJECTED --workspace flag (or the
+#         saved default). NOTE: a few commands instead take workspace_id as an
+#         ordinary query flag --workspace-id (see "q" containing workspace_id,
+#         e.g. incidents.*, drift.get-event). On those, --workspace does NOT
+#         work and the saved default is NOT applied -- pass --workspace-id <id>.
+#   body  true => accepts a JSON body via --data '<json>' | --data-file <p> | stdin.
+#   q     query flags, space-separated as "name:type"; a trailing * on the
+#         name means required. Types: str int float bool list[str].
+#         - list[str]: repeat the flag      --tag a --tag b
+#         - bool:      --flag / --no-flag    (NOT --flag true)
+#         - others:    --flag <value>
+#
+# SHARED FLAGS (every generated command):
+#   --workspace <id>   use this workspace instead of the saved default (ws cmds only)
+#   --data '<json>'    JSON request body inline
+#   --data-file <p>    JSON request body from a file
+#   --output <mode>    pretty (default) | raw
+#   --help             print the command's exact signature and exit
+#
+# OUTPUT MODES (--output):
+#   pretty  default; human-readable JSON, syntax-highlighted
+#   raw     plain JSON to stdout for jq/grep/files; one trailing newline
+#   (both print nothing for a 204; exit code still 0)
+#
+# BUILT-IN COMMANDS (hand-written, NOT generated; present even with no cached spec):
+#   bentolabs auth login            browser sign-in; tokens -> OS keychain (signs in as YOU, not an API key)
+#   bentolabs auth whoami           signed-in email + current workspace (accepts --workspace)
+#   bentolabs auth logout           revoke the server session, clear local tokens
+#   bentolabs workspaces use <id>   save a default workspace (validated vs your memberships)
+#   bentolabs workspaces list       list your workspaces (also appears under groups: workspaces)
+#   bentolabs raw <METHOD> <PATH>   ad-hoc request to any path; you fill in workspace_id.
+#                                   Body via --data/--data-file ONLY (raw ignores stdin).
+#   bentolabs refresh               re-pull the command list from the API (picks up new endpoints)
+#   bentolabs config show           print active config + config file path
+#   bentolabs config set api-base <url>   point CLI at another API base (local dev / custom deploy only)
+#   bentolabs version               print the installed CLI version
+#
+# Default API base: https://api.bentolabs.ai
+
+groups:
+  agent:
+    about: "The in-product AI agent. Conversations, chat turns, and turn streaming. Dashboard: Agent."
+    commands:
+      confirm-action-route: {m: POST, path: "/workspaces/{ws}/agent/confirm", ws: true, body: true}
+      create-conversation: {m: POST, path: "/workspaces/{ws}/agent/conversations", ws: true, body: true}
+      enqueue-chat: {m: POST, path: "/workspaces/{ws}/agent/chat", ws: true, body: true}
+      get-conversation: {m: GET, path: "/workspaces/{ws}/agent/conversations/{conversation_id}", pos: [conversation_id], ws: true}
+      get-turn: {m: GET, path: "/workspaces/{ws}/agent/turns/{turn_id}", pos: [turn_id], ws: true}
+      list-conversations: {m: GET, path: "/workspaces/{ws}/agent/conversations", ws: true, q: "limit:int offset:int"}
+      stream-turn: {m: GET, path: "/workspaces/{ws}/agent/turns/{turn_id}/stream", pos: [turn_id], ws: true, q: "after_seq:int"}
+  analytics:
+    about: "Aggregated trace metrics: summary totals and bucketed timelines. Dashboard: Runs (charts)."
+    commands:
+      trace-summary: {m: GET, path: "/workspaces/{ws}/traces/summary", ws: true, q: "start*:str end*:str q:str status:str tag:[str] model:[str] finding_kind:[str]"}
+      trace-timeline: {m: GET, path: "/workspaces/{ws}/traces/timeline", ws: true, q: "start*:str end*:str bucket:str q:str status:str tag:[str] model:[str] finding_kind:[str]"}
+  api-keys:
+    about: "Workspace API keys for programmatic access. Dashboard: Settings -> API keys."
+    commands:
+      create: {m: POST, path: "/workspaces/{ws}/api-keys", ws: true, body: true}
+      list: {m: GET, path: "/workspaces/{ws}/api-keys", ws: true}
+      revoke: {m: DELETE, path: "/api-keys/{key_id}", pos: [key_id]}
+  clusters:
+    about: "Groupings of similar findings/signal events, with the scatter view. Dashboard: Monitoring (clusters)."
+    commands:
+      get-scatter: {m: GET, path: "/workspaces/{ws}/clusters/scatter", ws: true}
+      get-workspace: {m: GET, path: "/workspaces/{ws}/clusters", ws: true}
+  credentials:
+    about: "Stored connections to external trace sources (e.g. Langfuse). Dashboard: Credentials / Settings -> Integrations."
+    commands:
+      create: {m: POST, path: "/workspaces/{ws}/credentials", ws: true, body: true}
+      delete: {m: DELETE, path: "/credentials/{credential_id}", pos: [credential_id]}
+      get: {m: GET, path: "/credentials/{credential_id}", pos: [credential_id]}
+      list: {m: GET, path: "/workspaces/{ws}/credentials", ws: true}
+      run-health-check: {m: POST, path: "/credentials/{credential_id}/health-check", pos: [credential_id]}
+      update: {m: PUT, path: "/credentials/{credential_id}", pos: [credential_id], body: true}
+  deep-search:
+    about: "Analyst loop: open a session, list candidate trajectories, label them, train a signal from the labels. Dashboard: Deep Search."
+    commands:
+      create-classifier-signal: {m: POST, path: "/deep-search/sessions/{session_id}/create-signal", pos: [session_id], body: true}
+      create-session: {m: POST, path: "/workspaces/{ws}/deep-search/sessions", ws: true, body: true}
+      get-session: {m: GET, path: "/deep-search/sessions/{session_id}", pos: [session_id]}
+      label-candidate: {m: POST, path: "/deep-search/sessions/{session_id}/label", pos: [session_id], body: true}
+      list-candidates: {m: GET, path: "/workspaces/{ws}/deep-search/sessions/{session_id}/candidates", pos: [session_id], ws: true, q: "limit:int cursor:str"}
+  drift:
+    about: "Behavioral drift events vs a baseline. Dashboard: Drift."
+    commands:
+      get-event: {m: GET, path: "/drift-events/{drift_event_id}", pos: [drift_event_id], q: "workspace_id*:str"}
+      list-events: {m: GET, path: "/workspaces/{ws}/drift-events", ws: true, q: "limit:int cursor:str severity:int verdict:str start_time:str end_time:str show_unverified:bool"}
+  fingerprints:
+    about: "Structural signatures of a trace, used to find and diff similar runs. Surfaced inside trace detail."
+    commands:
+      diff: {m: GET, path: "/fingerprints/{left_id}/diff/{right_id}", pos: [left_id, right_id]}
+      get: {m: GET, path: "/fingerprints/{fingerprint_id}", pos: [fingerprint_id]}
+      get-trace: {m: GET, path: "/traces/{trace_id}/fingerprint", pos: [trace_id]}
+      list: {m: GET, path: "/workspaces/{ws}/fingerprints", ws: true, q: "limit:int"}
+      recompute-trace: {m: POST, path: "/traces/{trace_id}/fingerprint/recompute", pos: [trace_id]}
+  incidents:
+    about: "Firing-signal incidents with an ack/assign/resolve lifecycle. Dashboard: Alerts -> Incidents."
+    commands:
+      acknowledge: {m: POST, path: "/incidents/{incident_id}/ack", pos: [incident_id], body: true, q: "workspace_id:str"}
+      assign: {m: POST, path: "/incidents/{incident_id}/assign", pos: [incident_id], body: true, q: "workspace_id:str"}
+      get: {m: GET, path: "/incidents/{incident_id}", pos: [incident_id], q: "workspace_id:str"}
+      list: {m: GET, path: "/incidents", q: "workspace_id:str limit:int cursor:str status:str start_time:str end_time:str sort_by:str sort_dir:str"}
+      resolve: {m: POST, path: "/incidents/{incident_id}/resolve", pos: [incident_id], body: true, q: "workspace_id:str"}
+  issues:
+    about: "Tracked problems with status, comments, activity, and linked findings/runs/trajectories. Dashboard: Issues."
+    commands:
+      change-status: {m: POST, path: "/workspaces/{ws}/issues/{issue_id}/status", pos: [issue_id], ws: true, body: true}
+      comment-on: {m: POST, path: "/workspaces/{ws}/issues/{issue_id}/comment", pos: [issue_id], ws: true, body: true}
+      create: {m: POST, path: "/workspaces/{ws}/issues", ws: true, body: true}
+      get: {m: GET, path: "/workspaces/{ws}/issues/{issue_id}", pos: [issue_id], ws: true}
+      list: {m: GET, path: "/workspaces/{ws}/issues", ws: true, q: "limit:int offset:int status:str category:str severity:int sort_by:str sort_dir:str"}
+      list-activity: {m: GET, path: "/workspaces/{ws}/issues/{issue_id}/activity", pos: [issue_id], ws: true}
+      list-findings: {m: GET, path: "/workspaces/{ws}/issues/{issue_id}/findings", pos: [issue_id], ws: true, q: "kind:str limit:int offset:int"}
+      list-runs: {m: GET, path: "/workspaces/{ws}/issues/{issue_id}/runs", pos: [issue_id], ws: true, q: "limit:int before:str before_id:str"}
+      list-trajectories: {m: GET, path: "/workspaces/{ws}/issues/{issue_id}/trajectories", pos: [issue_id], ws: true, q: "limit:int offset:int"}
+      update: {m: PATCH, path: "/workspaces/{ws}/issues/{issue_id}", pos: [issue_id], ws: true, body: true}
+  notification-channels:
+    about: "Alert delivery destinations (Slack, etc.) plus test/last-delivery. Dashboard: Settings -> Notifications."
+    commands:
+      create: {m: POST, path: "/workspaces/{ws}/notification_channels", ws: true, body: true}
+      delete: {m: DELETE, path: "/notification_channels/{channel_id}", pos: [channel_id]}
+      get: {m: GET, path: "/notification_channels/{channel_id}", pos: [channel_id]}
+      get-last-delivery: {m: GET, path: "/notification_channels/{channel_id}/last_delivery", pos: [channel_id]}
+      list: {m: GET, path: "/workspaces/{ws}/notification_channels", ws: true}
+      test: {m: POST, path: "/notification_channels/{channel_id}/test", pos: [channel_id]}
+      update: {m: PUT, path: "/notification_channels/{channel_id}", pos: [channel_id], body: true}
+  signals:
+    about: "Learned classifiers that detect a pattern across findings; have events and clusters. Dashboard: Signals."
+    commands:
+      create: {m: POST, path: "/workspaces/{ws}/signals", ws: true, body: true}
+      delete: {m: DELETE, path: "/signals/{signal_id}", pos: [signal_id]}
+      get: {m: GET, path: "/signals/{signal_id}", pos: [signal_id]}
+      list: {m: GET, path: "/workspaces/{ws}/signals", ws: true, q: "limit:int offset:int source:str status:str group:str"}
+      list-clusters: {m: GET, path: "/signals/{signal_id}/clusters", pos: [signal_id]}
+      list-events: {m: GET, path: "/signals/{signal_id}/events", pos: [signal_id], q: "limit:int cursor:str start_time:str end_time:str"}
+      update: {m: PATCH, path: "/signals/{signal_id}", pos: [signal_id], body: true}
+  sync:
+    about: "Import status from external sources: settings, reports, doctor, per-credential status. Dashboard: Settings -> Integrations."
+    commands:
+      get-doctor: {m: GET, path: "/workspaces/{ws}/sync-doctor", ws: true, q: "from_date:str to_date:str"}
+      get-workspace-settings: {m: GET, path: "/workspaces/{ws}/sync-settings", ws: true}
+      list-workspace-reports: {m: GET, path: "/workspaces/{ws}/sync-reports", ws: true, q: "limit:int"}
+      status: {m: GET, path: "/credentials/{credential_id}/sync/status", pos: [credential_id]}
+      update-workspace-settings: {m: PATCH, path: "/workspaces/{ws}/sync-settings", ws: true, body: true}
+  traces:
+    about: "One imported agent run (raw recorded request). Has spans, body, fingerprint, issues. Dashboard: Runs."
+    commands:
+      get: {m: GET, path: "/traces/{trace_id}", pos: [trace_id]}
+      get-body: {m: GET, path: "/traces/{trace_id}/body", pos: [trace_id]}
+      get-span: {m: GET, path: "/spans/{span_id}", pos: [span_id]}
+      list: {m: GET, path: "/workspaces/{ws}/traces", ws: true, q: "limit:int sort:str before:str before_id:str cursor:str start_time:str end_time:str q:str status:str tag:[str] model:[str] finding_kind:[str]"}
+      list-issues: {m: GET, path: "/traces/{trace_id}/issues", pos: [trace_id]}
+      list-spans: {m: GET, path: "/traces/{trace_id}/spans", pos: [trace_id], q: "limit:int after:str after_id:str status:str"}
+  trajectories:
+    about: "An assembled, analyzed agent run (the monitoring unit). Filterable by suspicious/win/errors; has findings. Dashboard: Monitoring."
+    commands:
+      get: {m: GET, path: "/workspaces/{ws}/trajectories/{trajectory_id}", pos: [trajectory_id], ws: true}
+      list: {m: GET, path: "/workspaces/{ws}/trajectories", ws: true, q: "limit:int cursor:str start_time:str end_time:str status:str is_suspicious:bool is_win:bool extraction_status:str has_findings:bool has_errors:bool q:str sort_by:str"}
+      list-findings: {m: GET, path: "/workspaces/{ws}/trajectories/{trajectory_id}/findings", pos: [trajectory_id], ws: true}
+  workspace-extraction-config:
+    about: "Per-workspace finding-extraction config for monitoring. Dashboard: Monitoring settings."
+    commands:
+      get: {m: GET, path: "/workspaces/{ws}/monitoring/extraction-config", ws: true}
+      put: {m: PUT, path: "/workspaces/{ws}/monitoring/extraction-config", ws: true, body: true}
+  workspaces:
+    about: "Tenancy: list/create workspaces, manage members. Dashboard: Settings -> General / Members."
+    commands:
+      create: {m: POST, path: "/workspaces", body: true}
+      list: {m: GET, path: "/workspaces"}
+      list-users: {m: GET, path: "/workspaces/{ws}/users", ws: true}
+      remove-member: {m: DELETE, path: "/workspaces/{ws}/members/{user_id}", pos: [user_id], ws: true}
+      update: {m: PATCH, path: "/workspaces/{ws}", ws: true, body: true}
